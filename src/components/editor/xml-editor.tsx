@@ -1,0 +1,163 @@
+'use client';
+
+import React, { useRef, useEffect } from 'react';
+import Editor from '@monaco-editor/react';
+import type { ValidationError } from '@/types/common';
+
+interface XMLEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+  errors?: ValidationError[];
+  readOnly?: boolean;
+  height?: string | number;
+  theme?: 'light' | 'dark';
+}
+
+export function XMLEditor({
+  value,
+  onChange,
+  errors = [],
+  readOnly = false,
+  height = '500px',
+  theme = 'light'
+}: XMLEditorProps) {
+  const editorRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (editorRef.current && errors.length > 0 && typeof window !== 'undefined') {
+      import('monaco-editor').then((monaco) => {
+        const model = editorRef.current.getModel();
+        if (model) {
+          const markers = errors.map((error) => ({
+            severity: error.severity === 'error' 
+              ? monaco.MarkerSeverity.Error 
+              : monaco.MarkerSeverity.Warning,
+            message: error.message,
+            startLineNumber: error.line || 1,
+            startColumn: error.column || 1,
+            endLineNumber: error.line || 1,
+            endColumn: error.column ? error.column + 10 : 10,
+            code: error.code || undefined
+          }));
+          
+          monaco.editor.setModelMarkers(model, 'scxml-parser', markers);
+        }
+      });
+    }
+  }, [errors]);
+
+  const handleEditorMount = (editor: any) => {
+    editorRef.current = editor;
+
+    if (typeof window !== 'undefined') {
+      import('monaco-editor').then((monaco) => {
+        // Configure XML language features
+        monaco.languages.setLanguageConfiguration('xml', {
+          brackets: [['<', '>']],
+          autoClosingPairs: [
+            { open: '<', close: '>' },
+            { open: '"', close: '"' },
+            { open: "'", close: "'" }
+          ],
+          surroundingPairs: [
+            { open: '<', close: '>' },
+            { open: '"', close: '"' },
+            { open: "'", close: "'" }
+          ]
+        });
+
+        // Add SCXML-specific completions
+        monaco.languages.registerCompletionItemProvider('xml', {
+          provideCompletionItems: (model, position) => {
+            const suggestions = [
+              {
+                label: 'scxml',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0">\n\t$0\n</scxml>',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML root element'
+              },
+              {
+                label: 'state',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<state id="$1">\n\t$0\n</state>',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML state element'
+              },
+              {
+                label: 'transition',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<transition event="$1" target="$2" />$0',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML transition element'
+              },
+              {
+                label: 'onentry',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<onentry>\n\t$0\n</onentry>',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML onentry element'
+              },
+              {
+                label: 'onexit',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<onexit>\n\t$0\n</onexit>',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML onexit element'
+              },
+              {
+                label: 'final',
+                kind: monaco.languages.CompletionItemKind.Keyword,
+                insertText: '<final id="$1" />$0',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'SCXML final state element'
+              }
+            ];
+
+            return { suggestions };
+          }
+        });
+
+        // Set editor options
+        editor.updateOptions({
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          wordWrap: 'on',
+          automaticLayout: true,
+          formatOnPaste: true,
+          formatOnType: true
+        });
+      });
+    }
+  };
+
+  const handleEditorChange = (value: string | undefined) => {
+    onChange(value || '');
+  };
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <Editor
+        height={height}
+        language="xml"
+        theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+        value={value}
+        onChange={handleEditorChange}
+        onMount={handleEditorMount}
+        options={{
+          readOnly,
+          fontSize: 14,
+          lineNumbers: 'on',
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          wordWrap: 'on',
+          automaticLayout: true,
+          formatOnPaste: true,
+          formatOnType: true,
+          tabSize: 2,
+          insertSpaces: true
+        }}
+      />
+    </div>
+  );
+}
