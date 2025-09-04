@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { XMLEditor, type XMLEditorRef } from '@/components/editor';
 import { FileUpload, FileDownload } from '@/components/file-operations';
+import { Upload } from 'lucide-react';
 import { ErrorBoundary, ValidationPanel } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
 import { useEditorStore } from '@/stores/editor-store';
@@ -24,6 +25,7 @@ export default function Home() {
   const parser = useMemo(() => new SCXMLParser(), []);
   const validator = useMemo(() => new SCXMLValidator(), []);
   const editorRef = useRef<XMLEditorRef>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateContent = useCallback(
     (xmlContent: string) => {
@@ -104,6 +106,69 @@ export default function Home() {
     []
   );
 
+  const handleNewFileUpload = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        // Basic file validation
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          const errors: ValidationError[] = [{
+            message: 'File size too large. Maximum size is 10MB.',
+            severity: 'error',
+          }];
+          setErrors(errors);
+          setValidationPanelVisible(true);
+          return;
+        }
+
+        if (!file.name.match(/\.(scxml|xml)$/i)) {
+          const errors: ValidationError[] = [{
+            message: 'Invalid file type. Please select an SCXML or XML file.',
+            severity: 'error',
+          }];
+          setErrors(errors);
+          setValidationPanelVisible(true);
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target?.result as string;
+          if (content) {
+            const fileInfo: FileInfo = {
+              name: file.name,
+              size: file.size,
+              lastModified: new Date(file.lastModified),
+              content
+            };
+            setContent(content);
+            setFileInfo(fileInfo);
+            setErrors([]);
+          }
+        };
+        
+        reader.onerror = () => {
+          const errors: ValidationError[] = [{
+            message: 'Failed to read file. Please try again.',
+            severity: 'error',
+          }];
+          setErrors(errors);
+          setValidationPanelVisible(true);
+        };
+        
+        reader.readAsText(file);
+        
+        // Reset the input so the same file can be selected again
+        event.target.value = '';
+      }
+    },
+    [setContent, setFileInfo, setErrors, setValidationPanelVisible]
+  );
+
   const getDownloadFilename = () => {
     if (fileInfo?.name) {
       return fileInfo.name;
@@ -141,6 +206,13 @@ export default function Home() {
 
               {content && (
                 <div className='bg-white rounded-lg shadow-sm p-6'>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".scxml,.xml"
+                    onChange={handleFileInputChange}
+                    className="hidden"
+                  />
                   <div className='flex items-center justify-between mb-4'>
                     <div className='flex items-center space-x-4'>
                       <h2 className='text-lg font-semibold text-gray-900'>
@@ -154,6 +226,14 @@ export default function Home() {
                     </div>
 
                     <div className='flex items-center space-x-3'>
+                      <button
+                        onClick={handleNewFileUpload}
+                        className="flex items-center space-x-2 text-sm px-3 py-1 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
+                      >
+                        <Upload className="h-4 w-4" />
+                        <span>Load New File</span>
+                      </button>
+
                       <button
                         onClick={() =>
                           setValidationPanelVisible(!isValidationPanelVisible)
