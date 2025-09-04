@@ -27,7 +27,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   isValidationPanelVisible: false,
 
   setContent: (content: string) => {
-    const currentContent = get().content;
     set({ 
       content,
       isDirty: content !== (get().fileInfo?.content || '')

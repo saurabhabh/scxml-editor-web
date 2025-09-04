@@ -10,7 +10,7 @@ export class SCXMLParser {
       ignoreAttributes: false,
       attributeNamePrefix: '@_',
       textNodeName: '#text',
-      parseAttributeValue: true,
+      parseAttributeValue: false,
       trimValues: true,
       parseTagValue: true,
     });
@@ -18,7 +18,7 @@ export class SCXMLParser {
 
   parse(xmlContent: string): ParseResult<SCXMLDocument> {
     const errors: ValidationError[] = [];
-    let parsed: any = null;
+    let parsed: Record<string, unknown> | null = null;
     let hasXMLError = false;
 
     // First perform comprehensive XML syntax validation
@@ -304,28 +304,29 @@ export class SCXMLParser {
     return this.serializeElement('scxml', scxmlDoc.scxml);
   }
 
-  private serializeElement(tagName: string, element: any): string {
-    const attributes = Object.keys(element)
+  private serializeElement(tagName: string, element: Record<string, unknown> | SCXMLElement): string {
+    const elementObj = element as Record<string, unknown>;
+    const attributes = Object.keys(elementObj)
       .filter((key) => key.startsWith('@_'))
-      .map((key) => `${key.substring(2)}="${element[key]}"`)
+      .map((key) => `${key.substring(2)}="${elementObj[key]}"`)
       .join(' ');
 
     const attributeStr = attributes ? ` ${attributes}` : '';
 
     // Handle text content
-    if (element['#text']) {
-      return `<${tagName}${attributeStr}>${element['#text']}</${tagName}>`;
+    if (elementObj['#text']) {
+      return `<${tagName}${attributeStr}>${elementObj['#text']}</${tagName}>`;
     }
 
     // Handle child elements
-    const children = Object.keys(element)
+    const children = Object.keys(elementObj)
       .filter((key) => !key.startsWith('@_') && key !== '#text')
       .map((key) => {
-        const value = element[key];
+        const value = elementObj[key];
         if (Array.isArray(value)) {
-          return value.map((v) => this.serializeElement(key, v)).join('');
+          return value.map((v) => this.serializeElement(key, v as Record<string, unknown>)).join('');
         } else {
-          return this.serializeElement(key, value);
+          return this.serializeElement(key, value as Record<string, unknown>);
         }
       })
       .join('');

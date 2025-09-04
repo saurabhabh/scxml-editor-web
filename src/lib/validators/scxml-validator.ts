@@ -2,6 +2,9 @@ import type {
   SCXMLElement,
   StateElement,
   TransitionElement,
+  ParallelElement,
+  FinalElement,
+  HistoryElement,
 } from '@/types/scxml';
 import type { ValidationError } from '@/types/common';
 
@@ -106,14 +109,14 @@ export class SCXMLValidator {
   }
 
   private collectStateIdsFromParallel(
-    parallel: any,
+    parallel: ParallelElement,
     stateIds: Set<string>
   ): void {
     if (parallel.state) {
       const states = Array.isArray(parallel.state)
         ? parallel.state
         : [parallel.state];
-      states.forEach((s: any) => {
+      states.forEach((s: StateElement) => {
         if (s['@_id']) {
           stateIds.add(s['@_id']);
         }
@@ -125,7 +128,7 @@ export class SCXMLValidator {
       const parallels = Array.isArray(parallel.parallel)
         ? parallel.parallel
         : [parallel.parallel];
-      parallels.forEach((p: any) => {
+      parallels.forEach((p: ParallelElement) => {
         if (p['@_id']) {
           stateIds.add(p['@_id']);
         }
@@ -137,7 +140,7 @@ export class SCXMLValidator {
       const histories = Array.isArray(parallel.history)
         ? parallel.history
         : [parallel.history];
-      histories.forEach((h: any) => {
+      histories.forEach((h: HistoryElement) => {
         if (h['@_id']) {
           stateIds.add(h['@_id']);
         }
@@ -167,7 +170,7 @@ export class SCXMLValidator {
   }
 
   private validateTransitionTargets(
-    element: any,
+    element: SCXMLElement | StateElement | ParallelElement,
     stateIds: Set<string>,
     errors: ValidationError[]
   ): void {
@@ -176,7 +179,7 @@ export class SCXMLValidator {
       const states = Array.isArray(element.state)
         ? element.state
         : [element.state];
-      states.forEach((state: any) => {
+      states.forEach((state: StateElement) => {
         this.validateTransitionsInElement(state, stateIds, errors);
         this.validateTransitionTargets(state, stateIds, errors);
       });
@@ -187,7 +190,7 @@ export class SCXMLValidator {
       const parallels = Array.isArray(element.parallel)
         ? element.parallel
         : [element.parallel];
-      parallels.forEach((parallel: any) => {
+      parallels.forEach((parallel: ParallelElement) => {
         this.validateTransitionsInElement(parallel, stateIds, errors);
         this.validateTransitionTargets(parallel, stateIds, errors);
       });
@@ -195,7 +198,7 @@ export class SCXMLValidator {
   }
 
   private validateTransitionsInElement(
-    element: any,
+    element: StateElement | ParallelElement,
     stateIds: Set<string>,
     errors: ValidationError[]
   ): void {
@@ -255,7 +258,7 @@ export class SCXMLValidator {
     }
 
     // Validate version attribute
-    if (scxml['@_version'] && scxml['@_version'] !== '1.0' && scxml['@_version'] !== 1) {
+    if (scxml['@_version'] && String(scxml['@_version']) !== '1.0') {
       errors.push({
         message: `Unsupported SCXML version '${scxml['@_version']}'. Expected '1.0'`,
         severity: 'warning',
@@ -301,7 +304,7 @@ export class SCXMLValidator {
   }
 
   private validateElementsHaveIds(
-    elements: any,
+    elements: StateElement | StateElement[] | ParallelElement | ParallelElement[] | FinalElement | FinalElement[] | HistoryElement | HistoryElement[] | undefined,
     elementType: string,
     errors: ValidationError[]
   ): void {
@@ -345,7 +348,7 @@ export class SCXMLValidator {
   }
 
   private validateNestedParallelStructure(
-    parallel: any,
+    parallel: ParallelElement,
     errors: ValidationError[]
   ): void {
     // Validate nested states in parallel
@@ -363,7 +366,7 @@ export class SCXMLValidator {
 
     if (parallel.parallel) {
       const parallels = Array.isArray(parallel.parallel) ? parallel.parallel : [parallel.parallel];
-      parallels.forEach((nestedParallel: any) => {
+      parallels.forEach((nestedParallel: ParallelElement) => {
         this.validateNestedParallelStructure(nestedParallel, errors);
       });
     }

@@ -25,10 +25,9 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(({
   errors = [],
   readOnly = false,
   height = '500px',
-  theme = 'light',
-  onNavigateToLine
+  theme = 'light'
 }, ref) => {
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
 
   useImperativeHandle(ref, () => ({
     navigateToLine: (line: number, column?: number) => {
@@ -51,7 +50,7 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(({
   useEffect(() => {
     if (editorRef.current && errors.length > 0 && typeof window !== 'undefined') {
       import('monaco-editor').then((monaco) => {
-        const model = editorRef.current.getModel();
+        const model = editorRef.current?.getModel();
         if (model) {
           const markers = errors.map((error) => ({
             severity: error.severity === 'error' 
@@ -71,7 +70,7 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(({
     }
   }, [errors]);
 
-  const handleEditorMount = (editor: any) => {
+  const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
     editorRef.current = editor;
 
     if (typeof window !== 'undefined') {
@@ -94,48 +93,62 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(({
         // Add SCXML-specific completions
         monaco.languages.registerCompletionItemProvider('xml', {
           provideCompletionItems: (model, position) => {
+            const word = model.getWordUntilPosition(position);
+            const range = {
+              startLineNumber: position.lineNumber,
+              endLineNumber: position.lineNumber,
+              startColumn: word.startColumn,
+              endColumn: word.endColumn
+            };
+
             const suggestions = [
               {
                 label: 'scxml',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0">\n\t$0\n</scxml>',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML root element'
+                documentation: 'SCXML root element',
+                range
               },
               {
                 label: 'state',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<state id="$1">\n\t$0\n</state>',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML state element'
+                documentation: 'SCXML state element',
+                range
               },
               {
                 label: 'transition',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<transition event="$1" target="$2" />$0',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML transition element'
+                documentation: 'SCXML transition element',
+                range
               },
               {
                 label: 'onentry',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<onentry>\n\t$0\n</onentry>',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML onentry element'
+                documentation: 'SCXML onentry element',
+                range
               },
               {
                 label: 'onexit',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<onexit>\n\t$0\n</onexit>',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML onexit element'
+                documentation: 'SCXML onexit element',
+                range
               },
               {
                 label: 'final',
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: '<final id="$1" />$0',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'SCXML final state element'
+                documentation: 'SCXML final state element',
+                range
               }
             ];
 

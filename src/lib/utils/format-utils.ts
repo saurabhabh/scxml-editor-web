@@ -1,7 +1,7 @@
 export function formatXML(xml: string): string {
   const PADDING = '  ';
   const reg = /(>)(<)(\/*)/g;
-  let formatted = xml.replace(reg, '$1\r\n$2$3');
+  const formatted = xml.replace(reg, '$1\r\n$2$3');
   
   let pad = 0;
   return formatted.split('\r\n').map((node) => {
