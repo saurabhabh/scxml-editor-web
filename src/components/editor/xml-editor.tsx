@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import Editor from '@monaco-editor/react';
 import type { ValidationError } from '@/types/common';
 
@@ -11,17 +11,42 @@ interface XMLEditorProps {
   readOnly?: boolean;
   height?: string | number;
   theme?: 'light' | 'dark';
+  onNavigateToLine?: (line: number, column?: number) => void;
 }
 
-export function XMLEditor({
+export interface XMLEditorRef {
+  navigateToLine: (line: number, column?: number) => void;
+  focus: () => void;
+}
+
+export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(({
   value,
   onChange,
   errors = [],
   readOnly = false,
   height = '500px',
-  theme = 'light'
-}: XMLEditorProps) {
+  theme = 'light',
+  onNavigateToLine
+}, ref) => {
   const editorRef = useRef<any>(null);
+
+  useImperativeHandle(ref, () => ({
+    navigateToLine: (line: number, column?: number) => {
+      if (editorRef.current) {
+        editorRef.current.revealLine(line);
+        editorRef.current.setPosition({ 
+          lineNumber: line, 
+          column: column || 1 
+        });
+        editorRef.current.focus();
+      }
+    },
+    focus: () => {
+      if (editorRef.current) {
+        editorRef.current.focus();
+      }
+    }
+  }), []);
 
   useEffect(() => {
     if (editorRef.current && errors.length > 0 && typeof window !== 'undefined') {
@@ -160,4 +185,6 @@ export function XMLEditor({
       />
     </div>
   );
-}
+});
+
+XMLEditor.displayName = 'XMLEditor';

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect } from 'react';
-import { XMLEditor } from '@/components/editor';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { XMLEditor, type XMLEditorRef } from '@/components/editor';
 import { FileUpload, FileDownload } from '@/components/file-operations';
 import { ErrorBoundary, ValidationPanel } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
@@ -18,28 +18,48 @@ export default function Home() {
     setContent,
     setErrors,
     setFileInfo,
-    setValidationPanelVisible
+    setValidationPanelVisible,
   } = useEditorStore();
 
-  const parser = new SCXMLParser();
-  const validator = new SCXMLValidator();
+  const parser = useMemo(() => new SCXMLParser(), []);
+  const validator = useMemo(() => new SCXMLValidator(), []);
+  const editorRef = useRef<XMLEditorRef>(null);
 
-  const validateContent = useCallback((xmlContent: string) => {
-    if (!xmlContent.trim()) {
-      setErrors([]);
-      return;
-    }
+  const validateContent = useCallback(
+    (xmlContent: string) => {
+      if (!xmlContent.trim()) {
+        setErrors([]);
+        return;
+      }
 
-    const parseResult = parser.parse(xmlContent);
-    let allErrors = [...parseResult.errors];
+      console.log('🔍 Starting validation...');
+      const parseResult = parser.parse(xmlContent);
+      console.log(
+        '📝 Parse result:',
+        parseResult.success ? 'Success' : 'Failed'
+      );
+      console.log('⚠️ Parse errors count:', parseResult.errors.length);
 
-    if (parseResult.success && parseResult.data) {
-      const validationErrors = validator.validate(parseResult.data.scxml);
-      allErrors = [...allErrors, ...validationErrors];
-    }
+      let allErrors = [...parseResult.errors];
 
-    setErrors(allErrors);
-  }, [parser, validator, setErrors]);
+      if (parseResult.success && parseResult.data) {
+        console.log('✅ Running SCXML validation...');
+        const validationErrors = validator.validate(parseResult.data.scxml);
+        console.log('⚠️ Validation errors count:', validationErrors.length);
+        allErrors = [...allErrors, ...validationErrors];
+      } else {
+        console.log('❌ Skipping SCXML validation - parse failed');
+      }
+
+      console.log('📊 Total errors being set:', allErrors.length);
+      console.log(
+        '📋 All errors:',
+        allErrors.map((e) => e.message)
+      );
+      setErrors(allErrors);
+    },
+    [parser, validator, setErrors]
+  );
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -49,22 +69,40 @@ export default function Home() {
     return () => clearTimeout(debounceTimer);
   }, [content, validateContent]);
 
-  const handleFileLoad = useCallback((loadedFileInfo: FileInfo) => {
-    setFileInfo(loadedFileInfo);
-  }, [setFileInfo]);
+  const handleFileLoad = useCallback(
+    (loadedFileInfo: FileInfo) => {
+      setFileInfo(loadedFileInfo);
+    },
+    [setFileInfo]
+  );
 
-  const handleFileError = useCallback((errorMessages: string[]) => {
-    const errors: ValidationError[] = errorMessages.map(message => ({
-      message,
-      severity: 'error' as const
-    }));
-    setErrors(errors);
-    setValidationPanelVisible(true);
-  }, [setErrors, setValidationPanelVisible]);
+  const handleFileError = useCallback(
+    (errorMessages: string[]) => {
+      const errors: ValidationError[] = errorMessages.map((message) => ({
+        message,
+        severity: 'error' as const,
+      }));
+      setErrors(errors);
+      setValidationPanelVisible(true);
+    },
+    [setErrors, setValidationPanelVisible]
+  );
 
-  const handleContentChange = useCallback((newContent: string) => {
-    setContent(newContent);
-  }, [setContent]);
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setContent(newContent);
+    },
+    [setContent]
+  );
+
+  const handleErrorClick = useCallback(
+    (error: ValidationError) => {
+      if (error.line && error.column && editorRef.current) {
+        editorRef.current.navigateToLine(error.line, error.column);
+      }
+    },
+    []
+  );
 
   const getDownloadFilename = () => {
     if (fileInfo?.name) {
@@ -73,26 +111,27 @@ export default function Home() {
     return 'document.scxml';
   };
 
-  const hasErrors = errors.filter(e => e.severity === 'error').length > 0;
-  const hasWarnings = errors.filter(e => e.severity === 'warning').length > 0;
+  const hasErrors = errors.filter((e) => e.severity === 'error').length > 0;
+  const hasWarnings = errors.filter((e) => e.severity === 'warning').length > 0;
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-gray-50">
-        <div className="container mx-auto px-4 py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+      <div className='min-h-screen bg-gray-50'>
+        <div className='container mx-auto px-4 py-8'>
+          <div className='mb-8'>
+            <h1 className='text-3xl font-bold text-gray-900 mb-2'>
               SCXML Parser & Editor
             </h1>
-            <p className="text-gray-600">
-              Load, edit, and validate SCXML files with real-time syntax checking
+            <p className='text-gray-600'>
+              Load, edit, and validate SCXML files with real-time syntax
+              checking
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
+            <div className='lg:col-span-2 space-y-6'>
               {!content && (
-                <div className="bg-white rounded-lg shadow-sm p-6">
+                <div className='bg-white rounded-lg shadow-sm p-6'>
                   <FileUpload
                     onFileLoad={handleFileLoad}
                     onError={handleFileError}
@@ -101,22 +140,24 @@ export default function Home() {
               )}
 
               {content && (
-                <div className="bg-white rounded-lg shadow-sm p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-4">
-                      <h2 className="text-lg font-semibold text-gray-900">
+                <div className='bg-white rounded-lg shadow-sm p-6'>
+                  <div className='flex items-center justify-between mb-4'>
+                    <div className='flex items-center space-x-4'>
+                      <h2 className='text-lg font-semibold text-gray-900'>
                         {fileInfo?.name || 'Untitled Document'}
                       </h2>
                       {isDirty && (
-                        <span className="text-xs text-amber-600 font-medium">
+                        <span className='text-xs text-amber-600 font-medium'>
                           • Modified
                         </span>
                       )}
                     </div>
-                    
-                    <div className="flex items-center space-x-3">
+
+                    <div className='flex items-center space-x-3'>
                       <button
-                        onClick={() => setValidationPanelVisible(!isValidationPanelVisible)}
+                        onClick={() =>
+                          setValidationPanelVisible(!isValidationPanelVisible)
+                        }
                         className={`text-sm px-3 py-1 rounded-md transition-colors ${
                           hasErrors
                             ? 'bg-red-100 text-red-800 hover:bg-red-200'
@@ -127,10 +168,15 @@ export default function Home() {
                       >
                         {errors.length === 0
                           ? 'Valid'
-                          : `${errors.filter(e => e.severity === 'error').length} errors, ${errors.filter(e => e.severity === 'warning').length} warnings`
-                        }
+                          : `${
+                              errors.filter((e) => e.severity === 'error')
+                                .length
+                            } errors, ${
+                              errors.filter((e) => e.severity === 'warning')
+                                .length
+                            } warnings`}
                       </button>
-                      
+
                       <FileDownload
                         content={content}
                         filename={getDownloadFilename()}
@@ -139,50 +185,55 @@ export default function Home() {
                   </div>
 
                   <XMLEditor
+                    ref={editorRef}
                     value={content}
                     onChange={handleContentChange}
                     errors={errors}
-                    height="600px"
+                    height='600px'
                   />
                 </div>
               )}
             </div>
 
-            <div className="space-y-6">
+            <div className='space-y-6'>
               {content && (
                 <ValidationPanel
                   errors={errors}
                   isVisible={isValidationPanelVisible}
                   onClose={() => setValidationPanelVisible(false)}
+                  onErrorClick={handleErrorClick}
                 />
               )}
 
               {!content && (
-                <div className="bg-white rounded-lg shadow-sm p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                <div className='bg-white rounded-lg shadow-sm p-6'>
+                  <h3 className='text-lg font-semibold text-gray-900 mb-4'>
                     Getting Started
                   </h3>
-                  <div className="space-y-4 text-sm text-gray-600">
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                  <div className='space-y-4 text-sm text-gray-600'>
+                    <div className='flex items-start space-x-3'>
+                      <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         1
                       </div>
                       <p>Upload an SCXML file or create a new one</p>
                     </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                    <div className='flex items-start space-x-3'>
+                      <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         2
                       </div>
-                      <p>Edit your SCXML with syntax highlighting and autocomplete</p>
+                      <p>
+                        Edit your SCXML with syntax highlighting and
+                        autocomplete
+                      </p>
                     </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                    <div className='flex items-start space-x-3'>
+                      <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         3
                       </div>
                       <p>Real-time validation shows errors and warnings</p>
                     </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                    <div className='flex items-start space-x-3'>
+                      <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         4
                       </div>
                       <p>Download your validated SCXML file</p>
@@ -191,29 +242,29 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <div className='bg-white rounded-lg shadow-sm p-6'>
+                <h3 className='text-lg font-semibold text-gray-900 mb-4'>
                   Features
                 </h3>
-                <ul className="space-y-2 text-sm text-gray-600">
-                  <li className="flex items-center space-x-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                <ul className='space-y-2 text-sm text-gray-600'>
+                  <li className='flex items-center space-x-2'>
+                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
                     <span>XML syntax highlighting</span>
                   </li>
-                  <li className="flex items-center space-x-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                  <li className='flex items-center space-x-2'>
+                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
                     <span>SCXML-specific autocomplete</span>
                   </li>
-                  <li className="flex items-center space-x-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                  <li className='flex items-center space-x-2'>
+                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
                     <span>Real-time validation</span>
                   </li>
-                  <li className="flex items-center space-x-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                  <li className='flex items-center space-x-2'>
+                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
                     <span>Error highlighting in editor</span>
                   </li>
-                  <li className="flex items-center space-x-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                  <li className='flex items-center space-x-2'>
+                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
                     <span>File import/export</span>
                   </li>
                 </ul>

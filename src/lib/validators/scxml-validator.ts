@@ -10,9 +10,14 @@ export class SCXMLValidator {
     const errors: ValidationError[] = [];
     const stateIds = new Set<string>();
 
+    // Collect all state IDs first
     this.collectStateIds(scxml, stateIds);
+    
+    // Perform all validation checks
     this.validateStateReferences(scxml, stateIds, errors);
     this.validateInitialStates(scxml, stateIds, errors);
+    this.validateRequiredAttributes(scxml, errors);
+    this.validateStateStructure(scxml, errors);
 
     return errors;
   }
@@ -233,6 +238,133 @@ export class SCXMLValidator {
             }
           });
         }
+      });
+    }
+  }
+
+  private validateRequiredAttributes(
+    scxml: SCXMLElement,
+    errors: ValidationError[]
+  ): void {
+    // Check for required SCXML attributes
+    if (!scxml['@_name'] && !scxml['@_initial'] && !scxml.state) {
+      errors.push({
+        message: 'SCXML must have either a name attribute, initial attribute, or at least one state',
+        severity: 'warning',
+      });
+    }
+
+    // Validate version attribute
+    if (scxml['@_version'] && scxml['@_version'] !== '1.0' && scxml['@_version'] !== 1) {
+      errors.push({
+        message: `Unsupported SCXML version '${scxml['@_version']}'. Expected '1.0'`,
+        severity: 'warning',
+      });
+    }
+
+    // Validate namespace
+    if (scxml['@_xmlns'] && scxml['@_xmlns'] !== 'http://www.w3.org/2005/07/scxml') {
+      errors.push({
+        message: `Invalid SCXML namespace '${scxml['@_xmlns']}'. Expected 'http://www.w3.org/2005/07/scxml'`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  private validateStateStructure(
+    scxml: SCXMLElement,
+    errors: ValidationError[]
+  ): void {
+    // Validate states have IDs
+    this.validateElementsHaveIds(scxml.state, 'State', errors);
+    
+    // Validate parallel states have IDs
+    this.validateElementsHaveIds(scxml.parallel, 'Parallel state', errors);
+    
+    // Validate final states have IDs
+    this.validateElementsHaveIds(scxml.final, 'Final state', errors);
+
+    // Validate nested state structures
+    if (scxml.state) {
+      const states = Array.isArray(scxml.state) ? scxml.state : [scxml.state];
+      states.forEach((state) => {
+        this.validateNestedStateStructure(state, errors);
+      });
+    }
+
+    if (scxml.parallel) {
+      const parallels = Array.isArray(scxml.parallel) ? scxml.parallel : [scxml.parallel];
+      parallels.forEach((parallel) => {
+        this.validateNestedParallelStructure(parallel, errors);
+      });
+    }
+  }
+
+  private validateElementsHaveIds(
+    elements: any,
+    elementType: string,
+    errors: ValidationError[]
+  ): void {
+    if (elements) {
+      const elementArray = Array.isArray(elements) ? elements : [elements];
+      elementArray.forEach((element, index) => {
+        if (!element['@_id']) {
+          errors.push({
+            message: `${elementType} at index ${index} must have an id attribute`,
+            severity: 'error',
+          });
+        }
+      });
+    }
+  }
+
+  private validateNestedStateStructure(
+    state: StateElement,
+    errors: ValidationError[]
+  ): void {
+    // Validate nested states
+    this.validateElementsHaveIds(state.state, 'Nested state', errors);
+    this.validateElementsHaveIds(state.parallel, 'Nested parallel state', errors);
+    this.validateElementsHaveIds(state.final, 'Nested final state', errors);
+    this.validateElementsHaveIds(state.history, 'History state', errors);
+
+    // Recursively validate nested states
+    if (state.state) {
+      const states = Array.isArray(state.state) ? state.state : [state.state];
+      states.forEach((nestedState) => {
+        this.validateNestedStateStructure(nestedState, errors);
+      });
+    }
+
+    if (state.parallel) {
+      const parallels = Array.isArray(state.parallel) ? state.parallel : [state.parallel];
+      parallels.forEach((parallel) => {
+        this.validateNestedParallelStructure(parallel, errors);
+      });
+    }
+  }
+
+  private validateNestedParallelStructure(
+    parallel: any,
+    errors: ValidationError[]
+  ): void {
+    // Validate nested states in parallel
+    this.validateElementsHaveIds(parallel.state, 'State in parallel', errors);
+    this.validateElementsHaveIds(parallel.parallel, 'Nested parallel state', errors);
+    this.validateElementsHaveIds(parallel.history, 'History state in parallel', errors);
+
+    // Recursively validate nested structures
+    if (parallel.state) {
+      const states = Array.isArray(parallel.state) ? parallel.state : [parallel.state];
+      states.forEach((state: StateElement) => {
+        this.validateNestedStateStructure(state, errors);
+      });
+    }
+
+    if (parallel.parallel) {
+      const parallels = Array.isArray(parallel.parallel) ? parallel.parallel : [parallel.parallel];
+      parallels.forEach((nestedParallel: any) => {
+        this.validateNestedParallelStructure(nestedParallel, errors);
       });
     }
   }
