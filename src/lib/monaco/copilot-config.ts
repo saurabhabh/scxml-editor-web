@@ -14,15 +14,9 @@ export interface CopilotConfig {
 }
 
 export const getSCXMLCopilotConfig = (): CopilotConfig | null => {
-  console.log('🔍 getSCXMLCopilotConfig called');
-  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  console.log(
-    '🔑 API Key check:',
-    apiKey ? `Found (${apiKey.slice(0, 8)}...)` : 'Not found'
-  );
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    console.log('❌ No API key found, returning null');
     return null;
   }
 
@@ -112,12 +106,6 @@ export const createSCXMLCompletionProvider = (
   triggerCharacters: ['<', ' ', '"', "'"],
 
   provideCompletionItems: (model, position, context) => {
-    console.log(
-      '🔍 SCXML Completion Provider triggered at position:',
-      position
-    );
-    console.log('🔄 Completion context:', context);
-
     const textUntilPosition = model.getValueInRange({
       startLineNumber: 1,
       startColumn: 1,
@@ -139,47 +127,32 @@ export const createSCXMLCompletionProvider = (
         Math.min(model.getLineCount(), position.lineNumber + linesAfter)
       ),
     });
-
-    console.log('📄 Context around cursor (±3 lines):');
-    console.log(contextRange);
-    console.log('📊 Document stats:', {
-      totalLines: model.getLineCount(),
-      currentLine: position.lineNumber,
-      currentColumn: position.column,
-      textUntilCursor: textUntilPosition.length,
-      isEmpty: textUntilPosition.trim().length === 0,
-    });
-
     // Enhanced document detection - support XML files and SCXML context
     const hasXMLDeclaration = textUntilPosition.includes('<?xml');
-    const hasSCXMLContent = textUntilPosition.includes('<scxml') || 
-                           textUntilPosition.includes('http://www.w3.org/2005/07/scxml');
+    const hasSCXMLContent =
+      textUntilPosition.includes('<scxml') ||
+      textUntilPosition.includes('http://www.w3.org/2005/07/scxml');
     const hasMinimalContext = textUntilPosition.trim().length < 100;
     const isEmptyDocument = textUntilPosition.trim().length === 0;
-    
+
     // Check file context - assume XML/SCXML based on Monaco language setting
-    const isXMLFile = model.getLanguageId() === 'xml' || model.getLanguageId() === 'scxml';
-    
+    const isXMLFile =
+      model.getLanguageId() === 'xml' || model.getLanguageId() === 'scxml';
+
     // Always provide suggestions for:
     // 1. Any XML file (based on Monaco language)
-    // 2. Documents with XML declaration  
+    // 2. Documents with XML declaration
     // 3. Documents with SCXML content
     // 4. Empty/minimal context documents
-    const shouldProvideSuggestions = isXMLFile || hasXMLDeclaration || hasSCXMLContent || hasMinimalContext || isEmptyDocument;
+    const shouldProvideSuggestions =
+      isXMLFile ||
+      hasXMLDeclaration ||
+      hasSCXMLContent ||
+      hasMinimalContext ||
+      isEmptyDocument;
 
-    console.log('📄 Enhanced document detection:', {
-      hasXMLDeclaration,
-      hasSCXMLContent, 
-      hasMinimalContext,
-      isEmptyDocument,
-      isXMLFile,
-      languageId: model.getLanguageId(),
-      shouldProvideSuggestions,
-      textLength: textUntilPosition.length
-    });
 
     if (!shouldProvideSuggestions) {
-      console.log('❌ Context not suitable for SCXML suggestions');
       return { suggestions: [] };
     }
 
@@ -187,14 +160,6 @@ export const createSCXMLCompletionProvider = (
     const linePrefix = line.substring(0, position.column - 1);
     const lineSuffix = line.substring(position.column - 1);
 
-    console.log('📝 Current line analysis:', {
-      fullLine: `"${line}"`,
-      prefix: `"${linePrefix}"`,
-      suffix: `"${lineSuffix}"`,
-      isEmpty: line.trim().length === 0,
-      startsWithOpenBracket: linePrefix.endsWith('<'),
-      endsWithCloseBracket: lineSuffix.startsWith('>'),
-    });
 
     // Context-aware suggestions based on current location
     const suggestions: monaco.languages.CompletionItem[] = [];
@@ -206,55 +171,29 @@ export const createSCXMLCompletionProvider = (
     };
 
     // Different suggestion strategies based on context
-    console.log('🎯 Determining suggestion strategy...');
 
     // If we're starting a new XML element
     if (linePrefix.endsWith('<')) {
-      console.log('🔥 Detected element start, analyzing parent context...');
 
       // Get context by looking at the parent element
       const textBeforeCursor = model
         .getValue()
         .slice(0, model.getOffsetAt(position));
       const parentElement = getParentElement(textBeforeCursor);
-      console.log('🌳 Parent element detected:', parentElement);
 
-      // Show detailed context analysis
-      console.log('🔍 Context analysis:', {
-        hasParent: !!parentElement,
-        parentElement,
-        isRootLevel: !parentElement,
-        documentLength: textUntilPosition.length,
-        isEmptyDocument: textUntilPosition.trim().length === 0,
-      });
 
       switch (parentElement) {
         case 'scxml':
           const rootSuggestions = getSCXMLRootSuggestions(monaco, range);
           suggestions.push(...rootSuggestions);
-          console.log(
-            '✅ Added SCXML root suggestions:',
-            rootSuggestions.length,
-            rootSuggestions.map((s) => s.label)
-          );
           break;
         case 'state':
           const stateSuggestions = getStateSuggestions(monaco, range);
           suggestions.push(...stateSuggestions);
-          console.log(
-            '✅ Added state suggestions:',
-            stateSuggestions.length,
-            stateSuggestions.map((s) => s.label)
-          );
           break;
         case 'transition':
           const transitionSuggestions = getTransitionSuggestions(monaco, range);
           suggestions.push(...transitionSuggestions);
-          console.log(
-            '✅ Added transition suggestions:',
-            transitionSuggestions.length,
-            transitionSuggestions.map((s) => s.label)
-          );
           break;
         case 'onentry':
         case 'onexit':
@@ -263,44 +202,21 @@ export const createSCXMLCompletionProvider = (
             range
           );
           suggestions.push(...executableSuggestions);
-          console.log(
-            '✅ Added executable content suggestions:',
-            executableSuggestions.length,
-            executableSuggestions.map((s) => s.label)
-          );
           break;
         case 'datamodel':
           const dataModelSuggestions = getDataModelSuggestions(monaco, range);
           suggestions.push(...dataModelSuggestions);
-          console.log(
-            '✅ Added datamodel suggestions:',
-            dataModelSuggestions.length,
-            dataModelSuggestions.map((s) => s.label)
-          );
           break;
         default:
           // Always provide core SCXML elements regardless of context
           const coreElements = getCoreScxmlElements(monaco, range);
           suggestions.push(...coreElements);
-          console.log(
-            '✅ Added core SCXML elements:',
-            coreElements.length,
-            coreElements.map((s) => s.label)
-          );
 
           const generalSuggestions = getGeneralSCXMLSuggestions(monaco, range);
           suggestions.push(...generalSuggestions);
-          console.log(
-            '✅ Added general SCXML suggestions:',
-            generalSuggestions.length,
-            generalSuggestions.map((s) => s.label)
-          );
 
           // For minimal context, provide extra helpful suggestions
           if (hasMinimalContext) {
-            console.log(
-              '🆘 Minimal context detected - adding XML declaration suggestion'
-            );
             suggestions.unshift({
               label: 'xml-declaration',
               kind: monaco.languages.CompletionItemKind.Snippet,
@@ -312,54 +228,29 @@ export const createSCXMLCompletionProvider = (
             });
           }
       }
-    } else if (linePrefix.trim().length === 0 && (hasMinimalContext || isEmptyDocument)) {
+    } else if (
+      linePrefix.trim().length === 0 &&
+      (hasMinimalContext || isEmptyDocument)
+    ) {
       // Empty line or document - provide bootstrap suggestions
-      console.log('📄 Empty line/document - providing bootstrap suggestions');
-      
       const bootstrapSuggestions = getBootstrapSuggestions(monaco, range);
       suggestions.push(...bootstrapSuggestions);
-      
+
       // Also provide core SCXML elements
       const coreElements = getCoreScxmlElements(monaco, range);
       suggestions.push(...coreElements);
-      
-      console.log(
-        '✅ Added bootstrap + core suggestions:',
-        bootstrapSuggestions.length + coreElements.length,
-        [...bootstrapSuggestions, ...coreElements].map((s) => s.label)
-      );
     } else {
-      console.log(
-        '🤷 No specific pattern matched, providing fallback suggestions...'
-      );
 
       // Always provide core SCXML elements as fallback
       const coreElements = getCoreScxmlElements(monaco, range);
       suggestions.push(...coreElements);
-      console.log(
-        '✅ Added fallback core SCXML elements:',
-        coreElements.length,
-        coreElements.map((s) => s.label)
-      );
 
       // Check if we're typing inside an element tag for attributes
       if (linePrefix.includes('<') && !linePrefix.includes('>')) {
-        console.log(
-          '🏷️ Possibly typing inside element tag - could be attributes'
-        );
+        // Could suggest attributes here in the future
       }
     }
 
-    console.log('🎯 Final suggestions count:', suggestions.length);
-    console.log('📋 Detailed suggestions:');
-    suggestions.forEach((s, index) => {
-      console.log(
-        `  ${index + 1}. ${s.label} (${s.kind}) - "${s.insertText?.slice(
-          0,
-          50
-        )}..."`
-      );
-    });
 
     return { suggestions };
   },
@@ -641,7 +532,7 @@ function getCoreScxmlElements(
   return [
     {
       label: 'state',
-      kind: monaco.languages.CompletionItemKind.Element,
+      kind: monaco.languages.CompletionItemKind.Keyword,
       insertText: 'state id="${1:stateName}"${0}',
       insertTextRules:
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -650,8 +541,9 @@ function getCoreScxmlElements(
     },
     {
       label: 'transition',
-      kind: monaco.languages.CompletionItemKind.Element,
-      insertText: 'transition event="${1:eventName}" target="${2:targetState}"${0}',
+      kind: monaco.languages.CompletionItemKind.Keyword,
+      insertText:
+        'transition event="${1:eventName}" target="${2:targetState}"${0}',
       insertTextRules:
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
       documentation: 'SCXML transition element',
@@ -659,8 +551,9 @@ function getCoreScxmlElements(
     },
     {
       label: 'scxml',
-      kind: monaco.languages.CompletionItemKind.Element,
-      insertText: 'scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="${1:initialState}"${0}',
+      kind: monaco.languages.CompletionItemKind.Keyword,
+      insertText:
+        'scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="${1:initialState}"${0}',
       insertTextRules:
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
       documentation: 'SCXML root element',
@@ -668,7 +561,7 @@ function getCoreScxmlElements(
     },
     {
       label: 'parallel',
-      kind: monaco.languages.CompletionItemKind.Element,
+      kind: monaco.languages.CompletionItemKind.Keyword,
       insertText: 'parallel id="${1:parallelName}"${0}',
       insertTextRules:
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -677,13 +570,13 @@ function getCoreScxmlElements(
     },
     {
       label: 'final',
-      kind: monaco.languages.CompletionItemKind.Element,
+      kind: monaco.languages.CompletionItemKind.Keyword,
       insertText: 'final id="${1:finalName}"${0}',
       insertTextRules:
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
       documentation: 'SCXML final state element',
       range,
-    }
+    },
   ];
 }
 
@@ -720,6 +613,6 @@ function getBootstrapSuggestions(
         monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
       documentation: 'XML declaration',
       range,
-    }
+    },
   ];
 }

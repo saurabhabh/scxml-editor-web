@@ -114,46 +114,44 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
             'scxml',
             scxmlProvider
           );
-          console.log('✅ SCXML completion provider registered');
 
           // Also register for XML to catch more cases
           const xmlDisposable = monaco.languages.registerCompletionItemProvider(
             'xml',
             {
               ...scxmlProvider,
-              provideCompletionItems: async (model, position, context, token) => {
-                console.log('🔍 XML completion provider triggered (backup)');
-                const result = await scxmlProvider.provideCompletionItems(model, position, context, token);
-                console.log('📋 XML provider result:', result?.suggestions?.length || 0, 'suggestions');
+              provideCompletionItems: async (
+                model,
+                position,
+                context,
+                token
+              ) => {
+                const result = await scxmlProvider.provideCompletionItems(
+                  model,
+                  position,
+                  context,
+                  token
+                );
                 return result;
-              }
+              },
             }
           );
-          console.log('✅ XML completion provider registered as backup');
 
-          // Register monacopilot for intelligent autocompletion
-          console.log('🔧 Checking monacopilot configuration...');
-          console.log('📋 Environment variables check:');
-          console.log('  - NEXT_PUBLIC_OPENAI_API_KEY:', process.env.NEXT_PUBLIC_OPENAI_API_KEY ? '✅ Set' : '❌ Not set');
-          console.log('  - NEXT_PUBLIC_OPENAI_ENDPOINT:', process.env.NEXT_PUBLIC_OPENAI_ENDPOINT || '(using default)');
-          
           const copilotConfig = getSCXMLCopilotConfig();
-          console.log('🤖 Monacopilot config:', copilotConfig);
-          
+
           if (copilotConfig) {
             try {
-              console.log('🚀 Registering monacopilot with Monaco Editor...');
-              const registration = registerCopilot(monaco, editor, copilotConfig);
-              console.log('✅ Monacopilot registered successfully:', registration);
-              console.log('💡 AI-powered suggestions are now available!');
+              const registration = registerCopilot(
+                monaco,
+                editor,
+                copilotConfig
+              );
             } catch (error) {
               console.error('❌ Failed to register monacopilot:', error);
-              console.info('💡 To enable AI-powered suggestions, set NEXT_PUBLIC_OPENAI_API_KEY environment variable');
+              console.info(
+                '💡 To enable AI-powered suggestions, set OPENAI_API_KEY environment variable'
+              );
             }
-          } else {
-            console.warn('⚠️  Monacopilot not configured');
-            console.info('💡 Set NEXT_PUBLIC_OPENAI_API_KEY in .env.local for AI-powered suggestions');
-            console.info('📖 See .env.example for setup instructions');
           }
 
           // Set editor options
@@ -183,43 +181,17 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
           });
 
           // Add event listeners to track editor interactions
-          editor.onDidChangeCursorPosition((e) => {
-            console.log('📍 Cursor position changed:', e.position);
-          });
+          editor.onDidChangeCursorPosition((e) => {});
 
-          editor.onDidChangeModelContent((e) => {
-            console.log('✏️ Content changed:', e.changes.length, 'changes');
-          });
+          editor.onDidChangeModelContent((e) => {});
 
           // Track when suggestions are shown/hidden
-          editor.onDidFocusEditorText(() => {
-            console.log('🎯 Editor focused');
-          });
+          editor.onDidFocusEditorText(() => {});
 
-          editor.onDidBlurEditorText(() => {
-            console.log('👁️ Editor blurred');
-          });
+          editor.onDidBlurEditorText(() => {});
 
           // Track key presses that might trigger completions
-          editor.onKeyDown((e) => {
-            const browserEvent = e.browserEvent;
-            if (browserEvent) {
-              const key = browserEvent.key;
-              // Check for keys that trigger completions
-              if (key === '<' || 
-                  key === ' ' || 
-                  key === '"' || 
-                  key === "'" ||
-                  (e.ctrlKey && key === ' ')) {
-                console.log('⌨️ Key pressed that might trigger completions:', {
-                  key,
-                  keyCode: e.keyCode,
-                  ctrlKey: e.ctrlKey,
-                  position: editor.getPosition()
-                });
-              }
-            }
-          });
+          editor.onKeyDown((e) => {});
         });
       }
     };

@@ -411,8 +411,8 @@ function getCurrentElement(text: string): string | null {
 function getAttributeSuggestions(
   beforeCursor: string,
   monaco: typeof import('monaco-editor'),
-  range: any
-): any[] {
+  range: monaco.IRange
+): monaco.languages.CompletionItem[] {
   const elementName = getCurrentElement(beforeCursor);
   if (!elementName || !scxmlAttributes[elementName]) {
     return [];
@@ -498,7 +498,7 @@ export function setupSCXMLLanguageSupport(
       const hoverInfo = scxmlHoverInfo[word.word];
       if (!hoverInfo) return null;
 
-      let contents = [`**${word.word}** - ${hoverInfo.description}`];
+      const contents = [`**${word.word}** - ${hoverInfo.description}`];
 
       if (hoverInfo.syntax) {
         contents.push(`**Syntax:** \`${hoverInfo.syntax}\``);

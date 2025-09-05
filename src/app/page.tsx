@@ -34,30 +34,15 @@ export default function Home() {
         return;
       }
 
-      console.log('🔍 Starting validation...');
       const parseResult = parser.parse(xmlContent);
-      console.log(
-        '📝 Parse result:',
-        parseResult.success ? 'Success' : 'Failed'
-      );
-      console.log('⚠️ Parse errors count:', parseResult.errors.length);
 
       let allErrors = [...parseResult.errors];
 
       if (parseResult.success && parseResult.data) {
-        console.log('✅ Running SCXML validation...');
         const validationErrors = validator.validate(parseResult.data.scxml);
-        console.log('⚠️ Validation errors count:', validationErrors.length);
         allErrors = [...allErrors, ...validationErrors];
-      } else {
-        console.log('❌ Skipping SCXML validation - parse failed');
       }
 
-      console.log('📊 Total errors being set:', allErrors.length);
-      console.log(
-        '📋 All errors:',
-        allErrors.map((e) => e.message)
-      );
       setErrors(allErrors);
     },
     [parser, validator, setErrors]

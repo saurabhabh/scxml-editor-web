@@ -21,7 +21,6 @@ export function ValidationPanel({
 
   const errorCount = errors.filter((e) => e.severity === 'error').length;
   const warningCount = errors.filter((e) => e.severity === 'warning').length;
-  console.log('Rendering ValidationPanel with errors:', errors);
   return (
     <div className='bg-white border rounded-lg shadow-sm'>
       <div className='flex items-center justify-between p-4 border-b'>
@@ -63,9 +62,9 @@ export function ValidationPanel({
 
             <div className='space-y-2 max-h-64 overflow-y-auto'>
               {errors.map((error, index) => (
-                <ValidationErrorItem 
-                  key={index} 
-                  error={error} 
+                <ValidationErrorItem
+                  key={index}
+                  error={error}
                   onClick={onErrorClick}
                 />
               ))}
@@ -92,19 +91,23 @@ function ValidationErrorItem({ error, onClick }: ValidationErrorItemProps) {
       className={`p-3 rounded-md border ${
         isError ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'
       } ${
-        isClickable 
-          ? 'cursor-pointer hover:shadow-md transition-shadow hover:bg-opacity-80' 
+        isClickable
+          ? 'cursor-pointer hover:shadow-md transition-shadow hover:bg-opacity-80'
           : ''
       }`}
       onClick={isClickable ? () => onClick(error) : undefined}
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
-      onKeyDown={isClickable ? (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick(error);
-        }
-      } : undefined}
+      onKeyDown={
+        isClickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick(error);
+              }
+            }
+          : undefined
+      }
     >
       <div className='flex items-start'>
         <div className='flex-shrink-0'>
@@ -130,11 +133,15 @@ function ValidationErrorItem({ error, onClick }: ValidationErrorItemProps) {
                 isError ? 'text-red-600' : 'text-yellow-600'
               }`}
             >
-              <span>Line {error.line || '?'}, Column {error.column || '?'}</span>
+              <span>
+                Line {error.line || '?'}, Column {error.column || '?'}
+              </span>
               {isClickable && (
-                <span className={`ml-2 text-xs ${
-                  isError ? 'text-red-500' : 'text-yellow-500'
-                }`}>
+                <span
+                  className={`ml-2 text-xs ${
+                    isError ? 'text-red-500' : 'text-yellow-500'
+                  }`}
+                >
                   (click to navigate)
                 </span>
               )}

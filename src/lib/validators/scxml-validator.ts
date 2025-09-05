@@ -5,6 +5,21 @@ import type {
   ParallelElement,
   FinalElement,
   HistoryElement,
+  OnEntryElement,
+  OnExitElement,
+  DataModelElement,
+  DataElement,
+  InvokeElement,
+  ScriptElement,
+  AssignElement,
+  SendElement,
+  RaiseElement,
+  LogElement,
+  CancelElement,
+  IfElement,
+  ElseIfElement,
+  ElseElement,
+  ForEachElement,
 } from '@/types/scxml';
 import type { ValidationError } from '@/types/common';
 
@@ -797,7 +812,7 @@ export class SCXMLValidator {
   ): void {
     this.validateElementAttributes(
       'scxml',
-      scxml,
+      scxml as unknown as Record<string, unknown>,
       this.getValidScxmlAttributes(),
       errors
     );
@@ -805,7 +820,7 @@ export class SCXMLValidator {
   }
 
   private validateChildElementAttributes(
-    element: SCXMLElement | StateElement | ParallelElement | any,
+    element: SCXMLElement | StateElement | ParallelElement,
     errors: ValidationError[]
   ): void {
     // Validate states
@@ -816,7 +831,7 @@ export class SCXMLValidator {
       states.forEach((state: StateElement) => {
         this.validateElementAttributes(
           'state',
-          state,
+          state as unknown as Record<string, unknown>,
           this.getValidStateAttributes(),
           errors
         );
@@ -833,7 +848,7 @@ export class SCXMLValidator {
       parallels.forEach((parallel: ParallelElement) => {
         this.validateElementAttributes(
           'parallel',
-          parallel,
+          parallel as unknown as Record<string, unknown>,
           this.getValidParallelAttributes(),
           errors
         );
@@ -842,14 +857,14 @@ export class SCXMLValidator {
     }
 
     // Validate final states
-    if (element.final) {
+    if ('final' in element && element.final) {
       const finals = Array.isArray(element.final)
         ? element.final
         : [element.final];
       finals.forEach((final: FinalElement) => {
         this.validateElementAttributes(
           'final',
-          final,
+          final as unknown as Record<string, unknown>,
           this.getValidFinalAttributes(),
           errors
         );
@@ -857,14 +872,14 @@ export class SCXMLValidator {
     }
 
     // Validate history states
-    if (element.history) {
+    if ('history' in element && element.history) {
       const histories = Array.isArray(element.history)
         ? element.history
         : [element.history];
       histories.forEach((history: HistoryElement) => {
         this.validateElementAttributes(
           'history',
-          history,
+          history as unknown as Record<string, unknown>,
           this.getValidHistoryAttributes(),
           errors
         );
@@ -872,14 +887,14 @@ export class SCXMLValidator {
     }
 
     // Validate transitions
-    if (element.transition) {
+    if ('transition' in element && element.transition) {
       const transitions = Array.isArray(element.transition)
         ? element.transition
         : [element.transition];
       transitions.forEach((transition: TransitionElement) => {
         this.validateElementAttributes(
           'transition',
-          transition,
+          transition as unknown as Record<string, unknown>,
           this.getValidTransitionAttributes(),
           errors
         );
@@ -896,10 +911,10 @@ export class SCXMLValidator {
       const onentries = Array.isArray(state.onentry)
         ? state.onentry
         : [state.onentry];
-      onentries.forEach((onentry: any) => {
+      onentries.forEach((onentry: OnEntryElement) => {
         this.validateElementAttributes(
           'onentry',
-          onentry,
+          onentry as unknown as Record<string, unknown>,
           this.getValidOnentryAttributes(),
           errors
         );
@@ -911,40 +926,27 @@ export class SCXMLValidator {
       const onexits = Array.isArray(state.onexit)
         ? state.onexit
         : [state.onexit];
-      onexits.forEach((onexit: any) => {
+      onexits.forEach((onexit: OnExitElement) => {
         this.validateElementAttributes(
           'onexit',
-          onexit,
+          onexit as unknown as Record<string, unknown>,
           this.getValidOnexitAttributes(),
           errors
         );
       });
     }
 
-    // Validate initial
-    if (state['@_initial']) {
-      const initials = Array.isArray(state['@_initial'])
-        ? state['@_initial']
-        : [state['@_initial']];
-      initials.forEach((initial: any) => {
-        this.validateElementAttributes(
-          'initial',
-          initial,
-          this.getValidInitialAttributes(),
-          errors
-        );
-      });
-    }
+    // Note: @_initial is a string attribute, not an element array
 
     // Validate datamodel
     if (state.datamodel) {
       const datamodels = Array.isArray(state.datamodel)
         ? state.datamodel
         : [state.datamodel];
-      datamodels.forEach((datamodel: any) => {
+      datamodels.forEach((datamodel: DataModelElement) => {
         this.validateElementAttributes(
           'datamodel',
-          datamodel,
+          datamodel as unknown as Record<string, unknown>,
           this.getValidDatamodelAttributes(),
           errors
         );
@@ -954,10 +956,10 @@ export class SCXMLValidator {
           const dataElements = Array.isArray(datamodel.data)
             ? datamodel.data
             : [datamodel.data];
-          dataElements.forEach((data: any) => {
+          dataElements.forEach((data: DataElement) => {
             this.validateElementAttributes(
               'data',
-              data,
+              data as unknown as Record<string, unknown>,
               this.getValidDataAttributes(),
               errors
             );
@@ -971,10 +973,10 @@ export class SCXMLValidator {
       const invokes = Array.isArray(state.invoke)
         ? state.invoke
         : [state.invoke];
-      invokes.forEach((invoke: any) => {
+      invokes.forEach((invoke: InvokeElement) => {
         this.validateElementAttributes(
           'invoke',
-          invoke,
+          invoke as unknown as Record<string, unknown>,
           this.getValidInvokeAttributes(),
           errors
         );
@@ -987,150 +989,142 @@ export class SCXMLValidator {
   }
 
   private validateExecutableContent(
-    element: any,
+    element:
+      | OnEntryElement
+      | OnExitElement
+      | OnEntryElement[]
+      | OnExitElement[]
+      | undefined,
     errors: ValidationError[]
   ): void {
     if (!element) return;
-
     const elements = Array.isArray(element) ? element : [element];
-    elements.forEach((el: any) => {
-      // Validate script elements
-      if (el.script) {
-        const scripts = Array.isArray(el.script) ? el.script : [el.script];
-        scripts.forEach((script: any) => {
-          this.validateElementAttributes(
-            'script',
-            script,
-            this.getValidScriptAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate assign elements
-      if (el.assign) {
-        const assigns = Array.isArray(el.assign) ? el.assign : [el.assign];
-        assigns.forEach((assign: any) => {
-          this.validateElementAttributes(
-            'assign',
-            assign,
-            this.getValidAssignAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate send elements
-      if (el.send) {
-        const sends = Array.isArray(el.send) ? el.send : [el.send];
-        sends.forEach((send: any) => {
-          this.validateElementAttributes(
-            'send',
-            send,
-            this.getValidSendAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate raise elements
-      if (el.raise) {
-        const raises = Array.isArray(el.raise) ? el.raise : [el.raise];
-        raises.forEach((raise: any) => {
-          this.validateElementAttributes(
-            'raise',
-            raise,
-            this.getValidRaiseAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate log elements
-      if (el.log) {
-        const logs = Array.isArray(el.log) ? el.log : [el.log];
-        logs.forEach((log: any) => {
-          this.validateElementAttributes(
-            'log',
-            log,
-            this.getValidLogAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate cancel elements
-      if (el.cancel) {
-        const cancels = Array.isArray(el.cancel) ? el.cancel : [el.cancel];
-        cancels.forEach((cancel: any) => {
-          this.validateElementAttributes(
-            'cancel',
-            cancel,
-            this.getValidCancelAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate if elements
-      if (el.if) {
-        const ifs = Array.isArray(el.if) ? el.if : [el.if];
-        ifs.forEach((ifEl: any) => {
-          this.validateElementAttributes(
-            'if',
-            ifEl,
-            this.getValidIfAttributes(),
-            errors
-          );
-          this.validateExecutableContent(ifEl, errors);
-        });
-      }
-
-      // Validate elseif elements
-      if (el.elseif) {
-        const elseifs = Array.isArray(el.elseif) ? el.elseif : [el.elseif];
-        elseifs.forEach((elseif: any) => {
-          this.validateElementAttributes(
-            'elseif',
-            elseif,
-            this.getValidElseifAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate else elements
-      if (el.else) {
-        const elses = Array.isArray(el.else) ? el.else : [el.else];
-        elses.forEach((elseEl: any) => {
-          this.validateElementAttributes(
-            'else',
-            elseEl,
-            this.getValidElseAttributes(),
-            errors
-          );
-        });
-      }
-
-      // Validate foreach elements
-      if (el.foreach) {
-        const foreachs = Array.isArray(el.foreach) ? el.foreach : [el.foreach];
-        foreachs.forEach((foreach: any) => {
-          this.validateElementAttributes(
-            'foreach',
-            foreach,
-            this.getValidForeachAttributes(),
-            errors
-          );
-          this.validateExecutableContent(foreach, errors);
+    elements.forEach((el: OnEntryElement | OnExitElement) => {
+      // Validate executable elements array
+      if (el.executable) {
+        el.executable.forEach((executable) => {
+          this.validateExecutableElement(executable, errors);
         });
       }
     });
   }
 
+  private validateExecutableElement(
+    executable: import('@/types/scxml').ExecutableElement,
+    errors: ValidationError[]
+  ): void {
+    // Validate based on the executable element type
+    const elementType = Object.keys(executable).find(
+      (key) => !key.startsWith('@_') && key !== '#text' && key !== '#cdata'
+    );
+
+    if (!elementType) return;
+
+    switch (elementType) {
+      case 'raise':
+        this.validateElementAttributes(
+          'raise',
+          executable as Record<string, unknown>,
+          this.getValidRaiseAttributes(),
+          errors
+        );
+        break;
+      case 'if':
+        this.validateElementAttributes(
+          'if',
+          executable as Record<string, unknown>,
+          this.getValidIfAttributes(),
+          errors
+        );
+        const ifEl = executable as IfElement;
+        if (ifEl.executable) {
+          ifEl.executable.forEach((nested) =>
+            this.validateExecutableElement(nested, errors)
+          );
+        }
+        break;
+      case 'elseif':
+        this.validateElementAttributes(
+          'elseif',
+          executable as Record<string, unknown>,
+          this.getValidElseifAttributes(),
+          errors
+        );
+        break;
+      case 'else':
+        this.validateElementAttributes(
+          'else',
+          executable as Record<string, unknown>,
+          this.getValidElseAttributes(),
+          errors
+        );
+        const elseEl = executable as ElseElement;
+        if (elseEl.executable) {
+          elseEl.executable.forEach((nested) =>
+            this.validateExecutableElement(nested, errors)
+          );
+        }
+        break;
+      case 'foreach':
+        this.validateElementAttributes(
+          'foreach',
+          executable as Record<string, unknown>,
+          this.getValidForeachAttributes(),
+          errors
+        );
+        const foreachEl = executable as ForEachElement;
+        if (foreachEl.executable) {
+          foreachEl.executable.forEach((nested) =>
+            this.validateExecutableElement(nested, errors)
+          );
+        }
+        break;
+      case 'log':
+        this.validateElementAttributes(
+          'log',
+          executable as Record<string, unknown>,
+          this.getValidLogAttributes(),
+          errors
+        );
+        break;
+      case 'assign':
+        this.validateElementAttributes(
+          'assign',
+          executable as Record<string, unknown>,
+          this.getValidAssignAttributes(),
+          errors
+        );
+        break;
+      case 'script':
+        this.validateElementAttributes(
+          'script',
+          executable as Record<string, unknown>,
+          this.getValidScriptAttributes(),
+          errors
+        );
+        break;
+      case 'send':
+        this.validateElementAttributes(
+          'send',
+          executable as Record<string, unknown>,
+          this.getValidSendAttributes(),
+          errors
+        );
+        break;
+      case 'cancel':
+        this.validateElementAttributes(
+          'cancel',
+          executable as Record<string, unknown>,
+          this.getValidCancelAttributes(),
+          errors
+        );
+        break;
+    }
+  }
+
   private validateElementAttributes(
     elementName: string,
-    element: any,
+    element: Record<string, unknown>,
     validAttributes: Set<string>,
     errors: ValidationError[]
   ): void {
