@@ -9,6 +9,25 @@ import { SCXMLParser, SCXMLValidator } from '@/lib';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
 
+const DEFAULT_SCXML_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+  <state id="idle">
+    <transition event="start" target="active" />
+  </state>
+  
+  <state id="active">
+    <onentry>
+      <log label="Entering active state" />
+    </onentry>
+    
+    <transition event="stop" target="idle" />
+    
+    <onexit>
+      <log label="Exiting active state" />
+    </onexit>
+  </state>
+</scxml>`;
+
 export default function Home() {
   const {
     content,
@@ -82,14 +101,24 @@ export default function Home() {
     [setContent]
   );
 
-  const handleErrorClick = useCallback(
-    (error: ValidationError) => {
-      if (error.line && error.column && editorRef.current) {
-        editorRef.current.navigateToLine(error.line, error.column);
-      }
-    },
-    []
-  );
+  const handleErrorClick = useCallback((error: ValidationError) => {
+    if (error.line && error.column && editorRef.current) {
+      editorRef.current.navigateToLine(error.line, error.column);
+    }
+  }, []);
+
+  const handleCreateNewDocument = useCallback(() => {
+    const fileInfo: FileInfo = {
+      name: 'new-document.scxml',
+      size: DEFAULT_SCXML_TEMPLATE.length,
+      lastModified: new Date(),
+      content: DEFAULT_SCXML_TEMPLATE,
+    };
+
+    setContent(DEFAULT_SCXML_TEMPLATE);
+    setFileInfo(fileInfo);
+    setErrors([]);
+  }, [setContent, setFileInfo, setErrors]);
 
   const handleNewFileUpload = useCallback(() => {
     fileInputRef.current?.click();
@@ -100,21 +129,26 @@ export default function Home() {
       const file = event.target.files?.[0];
       if (file) {
         // Basic file validation
-        if (file.size > 10 * 1024 * 1024) { // 10MB limit
-          const errors: ValidationError[] = [{
-            message: 'File size too large. Maximum size is 10MB.',
-            severity: 'error',
-          }];
+        if (file.size > 10 * 1024 * 1024) {
+          // 10MB limit
+          const errors: ValidationError[] = [
+            {
+              message: 'File size too large. Maximum size is 10MB.',
+              severity: 'error',
+            },
+          ];
           setErrors(errors);
           setValidationPanelVisible(true);
           return;
         }
 
         if (!file.name.match(/\.(scxml|xml)$/i)) {
-          const errors: ValidationError[] = [{
-            message: 'Invalid file type. Please select an SCXML or XML file.',
-            severity: 'error',
-          }];
+          const errors: ValidationError[] = [
+            {
+              message: 'Invalid file type. Please select an SCXML or XML file.',
+              severity: 'error',
+            },
+          ];
           setErrors(errors);
           setValidationPanelVisible(true);
           return;
@@ -128,25 +162,27 @@ export default function Home() {
               name: file.name,
               size: file.size,
               lastModified: new Date(file.lastModified),
-              content
+              content,
             };
             setContent(content);
             setFileInfo(fileInfo);
             setErrors([]);
           }
         };
-        
+
         reader.onerror = () => {
-          const errors: ValidationError[] = [{
-            message: 'Failed to read file. Please try again.',
-            severity: 'error',
-          }];
+          const errors: ValidationError[] = [
+            {
+              message: 'Failed to read file. Please try again.',
+              severity: 'error',
+            },
+          ];
           setErrors(errors);
           setValidationPanelVisible(true);
         };
-        
+
         reader.readAsText(file);
-        
+
         // Reset the input so the same file can be selected again
         event.target.value = '';
       }
@@ -166,9 +202,9 @@ export default function Home() {
 
   return (
     <ErrorBoundary>
-      <div className='min-h-screen bg-gray-50'>
+      <div className='min-h-screen bg-gray-50 overflow-hidden'>
         <div className='container mx-auto px-4 py-8'>
-          <div className='mb-8'>
+          <div className='mb-5'>
             <h1 className='text-3xl font-bold text-gray-900 mb-2'>
               SCXML Parser & Editor
             </h1>
@@ -193,10 +229,10 @@ export default function Home() {
                 <div className='bg-white rounded-lg shadow-sm p-6'>
                   <input
                     ref={fileInputRef}
-                    type="file"
-                    accept=".scxml,.xml"
+                    type='file'
+                    accept='.scxml,.xml'
                     onChange={handleFileInputChange}
-                    className="hidden"
+                    className='hidden'
                   />
                   <div className='flex items-center justify-between mb-4'>
                     <div className='flex items-center space-x-4'>
@@ -213,9 +249,9 @@ export default function Home() {
                     <div className='flex items-center space-x-3'>
                       <button
                         onClick={handleNewFileUpload}
-                        className="flex items-center space-x-2 text-sm px-3 py-1 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
+                        className='flex items-center space-x-2 text-sm px-3 py-1 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
                       >
-                        <Upload className="h-4 w-4" />
+                        <Upload className='h-4 w-4' />
                         <span>Load New File</span>
                       </button>
 
@@ -254,7 +290,7 @@ export default function Home() {
                     value={content}
                     onChange={handleContentChange}
                     errors={errors}
-                    height='600px'
+                    height='62vh'
                   />
                 </div>
               )}
@@ -280,7 +316,17 @@ export default function Home() {
                       <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         1
                       </div>
-                      <p>Upload an SCXML file or create a new one</p>
+                      <p>
+                        Upload an SCXML file or{' '}
+                        <button
+                          type='button'
+                          onClick={handleCreateNewDocument}
+                          className='inline text-blue-600 cursor-pointer hover:text-blue-800 underline transition-colors focus:outline-none'
+                          aria-label='Create new SCXML document'
+                        >
+                          create a new one
+                        </button>
+                      </p>
                     </div>
                     <div className='flex items-start space-x-3'>
                       <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>

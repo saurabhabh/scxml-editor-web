@@ -534,7 +534,7 @@ export class SCXMLValidator {
     visitedStates: Set<string>
   ): void {
     // Process states
-    if ('state' in element && element.state) {
+    if (element.state) {
       const states = Array.isArray(element.state)
         ? element.state
         : [element.state];
@@ -569,7 +569,7 @@ export class SCXMLValidator {
     }
 
     // Process parallel states
-    if ('parallel' in element && element.parallel) {
+    if (element.parallel) {
       const parallels = Array.isArray(element.parallel)
         ? element.parallel
         : [element.parallel];
@@ -591,7 +591,7 @@ export class SCXMLValidator {
       element: SCXMLElement | StateElement | ParallelElement
     ) => {
       // Count state IDs
-      if ('state' in element && element.state) {
+      if (element.state) {
         const states = Array.isArray(element.state)
           ? element.state
           : [element.state];
@@ -605,7 +605,7 @@ export class SCXMLValidator {
       }
 
       // Count parallel IDs
-      if ('parallel' in element && element.parallel) {
+      if (element.parallel) {
         const parallels = Array.isArray(element.parallel)
           ? element.parallel
           : [element.parallel];
@@ -618,12 +618,12 @@ export class SCXMLValidator {
         });
       }
 
-      // Count final state IDs
-      if ('final' in element && element.final) {
-        const finals = Array.isArray(element.final)
-          ? element.final
-          : [element.final];
-        finals.forEach((final) => {
+      // Count final state IDs - check if element has final property
+      if ((element as any).final) {
+        const finals = Array.isArray((element as any).final)
+          ? (element as any).final
+          : [(element as any).final];
+        finals.forEach((final: FinalElement) => {
           if (final['@_id']) {
             const count = idCounts.get(final['@_id']) || 0;
             idCounts.set(final['@_id'], count + 1);
@@ -694,12 +694,12 @@ export class SCXMLValidator {
     const validateTransitions = (
       element: SCXMLElement | StateElement | ParallelElement
     ) => {
-      if ('transition' in element && element.transition) {
-        const transitions = Array.isArray(element.transition)
-          ? element.transition
-          : [element.transition];
+      if ((element as any).transition) {
+        const transitions = Array.isArray((element as any).transition)
+          ? (element as any).transition
+          : [(element as any).transition];
 
-        transitions.forEach((transition) => {
+        transitions.forEach((transition: TransitionElement) => {
           // Validate transition types
           if (
             transition['@_type'] &&
@@ -714,9 +714,9 @@ export class SCXMLValidator {
           // Internal transitions must not have targets unless they are self-targeting
           if (transition['@_type'] === 'internal' && transition['@_target']) {
             const targets = transition['@_target'].split(/\s+/);
-            const sourceId = '@_id' in element ? element['@_id'] : undefined;
+            const sourceId = (element as any)['@_id'] ? (element as any)['@_id'] : undefined;
 
-            if (targets.some((target) => target !== sourceId)) {
+            if (targets.some((target: string) => target !== sourceId)) {
               errors.push({
                 message: 'Internal transitions cannot target other states',
                 severity: 'error',
@@ -727,7 +727,7 @@ export class SCXMLValidator {
           // Validate event names (basic check for valid event syntax)
           if (transition['@_event']) {
             const events = transition['@_event'].split(/\s+/);
-            events.forEach((event) => {
+            events.forEach((event: string) => {
               if (
                 event !== '*' &&
                 !/^[a-zA-Z_][a-zA-Z0-9_\-\.]*(\.\*)?$/.test(event)
@@ -743,14 +743,14 @@ export class SCXMLValidator {
       }
 
       // Recursively validate nested elements
-      if ('state' in element && element.state) {
+      if (element.state) {
         const states = Array.isArray(element.state)
           ? element.state
           : [element.state];
         states.forEach((state) => validateTransitions(state));
       }
 
-      if ('parallel' in element && element.parallel) {
+      if (element.parallel) {
         const parallels = Array.isArray(element.parallel)
           ? element.parallel
           : [element.parallel];
@@ -772,11 +772,11 @@ export class SCXMLValidator {
       element: SCXMLElement | StateElement | ParallelElement
     ) => {
       // Validate script elements
-      if ('script' in element && element.script) {
-        const scripts = Array.isArray(element.script)
-          ? element.script
-          : [element.script];
-        scripts.forEach((script) => {
+      if ((element as any).script) {
+        const scripts = Array.isArray((element as any).script)
+          ? (element as any).script
+          : [(element as any).script];
+        scripts.forEach((script: any) => {
           if (!script['@_src'] && !script['#text']) {
             errors.push({
               message:
@@ -788,14 +788,14 @@ export class SCXMLValidator {
       }
 
       // Recursively validate nested elements
-      if ('state' in element && element.state) {
+      if (element.state) {
         const states = Array.isArray(element.state)
           ? element.state
           : [element.state];
         states.forEach((state) => validateExecutable(state));
       }
 
-      if ('parallel' in element && element.parallel) {
+      if (element.parallel) {
         const parallels = Array.isArray(element.parallel)
           ? element.parallel
           : [element.parallel];
@@ -857,10 +857,10 @@ export class SCXMLValidator {
     }
 
     // Validate final states
-    if ('final' in element && element.final) {
-      const finals = Array.isArray(element.final)
-        ? element.final
-        : [element.final];
+    if ((element as any).final) {
+      const finals = Array.isArray((element as any).final)
+        ? (element as any).final
+        : [(element as any).final];
       finals.forEach((final: FinalElement) => {
         this.validateElementAttributes(
           'final',
@@ -872,10 +872,10 @@ export class SCXMLValidator {
     }
 
     // Validate history states
-    if ('history' in element && element.history) {
-      const histories = Array.isArray(element.history)
-        ? element.history
-        : [element.history];
+    if ((element as any).history) {
+      const histories = Array.isArray((element as any).history)
+        ? (element as any).history
+        : [(element as any).history];
       histories.forEach((history: HistoryElement) => {
         this.validateElementAttributes(
           'history',
@@ -887,10 +887,10 @@ export class SCXMLValidator {
     }
 
     // Validate transitions
-    if ('transition' in element && element.transition) {
-      const transitions = Array.isArray(element.transition)
-        ? element.transition
-        : [element.transition];
+    if ((element as any).transition) {
+      const transitions = Array.isArray((element as any).transition)
+        ? (element as any).transition
+        : [(element as any).transition];
       transitions.forEach((transition: TransitionElement) => {
         this.validateElementAttributes(
           'transition',

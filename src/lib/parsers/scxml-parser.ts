@@ -96,6 +96,7 @@ export class SCXMLParser {
     let inCDATA = false;
     let inComment = false;
     let inProcessingInstruction = false;
+    let hasIncompleteTag = false;
     
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
@@ -198,12 +199,21 @@ export class SCXMLParser {
           // Find the end of this tag
           const tagEndIndex = remaining.indexOf('>');
           if (tagEndIndex === -1) {
-            errors.push({
-              message: 'Unclosed tag - missing \'>\'',
-              line: lineNumber,
-              column: charIndex + 1,
-              severity: 'error'
-            });
+            // Check if this is at the end of the document - might be incomplete typing
+            const remainingContent = xmlContent.slice(xmlContent.indexOf(remaining));
+            const isAtEnd = remainingContent.trim() === remaining.trim();
+            
+            if (isAtEnd) {
+              // This might be incomplete typing, mark as potentially incomplete
+              hasIncompleteTag = true;
+            } else {
+              errors.push({
+                message: 'Unclosed tag - missing \'>\'',
+                line: lineNumber,
+                column: charIndex + 1,
+                severity: 'error'
+              });
+            }
           } else {
             // Check for malformed attributes within the tag
             const tagContent = remaining.slice(0, tagEndIndex + 1);
@@ -216,7 +226,7 @@ export class SCXMLParser {
         }
         
         // Check for unescaped special characters in text content
-        else if (['&', '<'].includes(char) && char !== '<') {
+        else if (['&'].includes(char)) {
           const entityMatch = remaining.match(/^&([a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);/);
           if (!entityMatch) {
             errors.push({
@@ -230,14 +240,23 @@ export class SCXMLParser {
       }
     }
     
-    // Check for unclosed tags
-    for (const unclosedTag of tagStack) {
-      errors.push({
-        message: `Unclosed tag '<${unclosedTag.name}>'`,
-        line: unclosedTag.line,
-        column: unclosedTag.col,
-        severity: 'error'
-      });
+    // Only report unclosed tags if the document appears complete
+    // (no incomplete tags detected and content is properly structured)
+    if (!hasIncompleteTag && tagStack.length > 0) {
+      // Check if the last line might be incomplete typing
+      const lastLine = lines[lines.length - 1];
+      const endsWithIncompleteTag = /<[^>]*$/.test(lastLine.trim());
+      
+      if (!endsWithIncompleteTag) {
+        for (const unclosedTag of tagStack) {
+          errors.push({
+            message: `Unclosed tag '<${unclosedTag.name}>'`,
+            line: unclosedTag.line,
+            column: unclosedTag.col,
+            severity: 'error'
+          });
+        }
+      }
     }
     
     return errors;
