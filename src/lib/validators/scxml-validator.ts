@@ -24,7 +24,20 @@ import type {
 import type { ValidationError } from '@/types/common';
 
 export class SCXMLValidator {
-  validate(scxml: SCXMLElement): ValidationError[] {
+  private xmlContent?: string;
+  private elementPositions: Map<any, { line: number; column: number }> = new Map();
+  private reportedErrors: Set<string> = new Set();
+
+  validate(scxml: SCXMLElement, xmlContent?: string): ValidationError[] {
+    this.xmlContent = xmlContent;
+    this.elementPositions.clear();
+    this.reportedErrors.clear();
+    
+    // Parse positions if XML content is provided
+    if (xmlContent) {
+      this.parseElementPositions(xmlContent);
+    }
+
     const errors: ValidationError[] = [];
     const stateIds = new Set<string>();
 
@@ -46,7 +59,7 @@ export class SCXMLValidator {
     // Comprehensive attribute validation
     this.validateAllElementAttributes(scxml, errors);
 
-    return errors;
+    return this.deduplicateErrors(errors);
   }
 
   private collectStateIds(scxml: SCXMLElement, stateIds: Set<string>): void {
@@ -183,7 +196,7 @@ export class SCXMLValidator {
       initialStates.forEach((stateId) => {
         if (!stateIds.has(stateId)) {
           errors.push({
-            message: `Initial state '${stateId}' not found`,
+            message: `Initial state '${stateId}' not found. Make sure a state with id="${stateId}" exists in your SCXML document.`,
             severity: 'error',
           });
         }
@@ -236,7 +249,7 @@ export class SCXMLValidator {
           targets.forEach((target) => {
             if (!stateIds.has(target)) {
               errors.push({
-                message: `Transition target '${target}' not found`,
+                message: `Transition target '${target}' not found. Make sure a state with id="${target}" exists in your SCXML document.`,
                 severity: 'error',
               });
             }
@@ -259,7 +272,7 @@ export class SCXMLValidator {
           initialStates.forEach((stateId) => {
             if (!stateIds.has(stateId)) {
               errors.push({
-                message: `Initial state '${stateId}' in state '${state['@_id']}' not found`,
+                message: `Initial state '${stateId}' in state '${state['@_id'] || 'unnamed'}' not found. Make sure a state with id="${stateId}" exists in your SCXML document.`,
                 severity: 'error',
               });
             }
@@ -352,10 +365,19 @@ export class SCXMLValidator {
     // Since we can't easily determine if it's a target here, we'll check if it has an ID
     // and warn if it doesn't (as most states should have IDs for proper functioning)
     if (!state['@_id']) {
-      errors.push({
-        message: `State at ${path} should have an 'id' attribute if it is a target of transitions`,
-        severity: 'warning',
-      });
+      const position = this.findElementPosition('state', path);
+      const errorKey = `missing_state_id_${path}`;
+      
+      // Avoid duplicate error reporting
+      if (!this.reportedErrors.has(errorKey)) {
+        this.reportedErrors.add(errorKey);
+        errors.push({
+          message: `State missing required 'id' attribute. All states should have unique identifiers for proper SCXML functionality.`,
+          severity: 'error',
+          line: position?.line,
+          column: position?.column,
+        });
+      }
     }
   }
 
@@ -366,10 +388,18 @@ export class SCXMLValidator {
   ): void {
     // Parallel requires 'id' attribute if it is a target of transitions
     if (!parallel['@_id']) {
-      errors.push({
-        message: `Parallel state at ${path} should have an 'id' attribute if it is a target of transitions`,
-        severity: 'warning',
-      });
+      const position = this.findElementPosition('parallel', path);
+      const errorKey = `missing_parallel_id_${path}`;
+      
+      if (!this.reportedErrors.has(errorKey)) {
+        this.reportedErrors.add(errorKey);
+        errors.push({
+          message: `Parallel state missing required 'id' attribute. All parallel states should have unique identifiers for proper SCXML functionality.`,
+          severity: 'error',
+          line: position?.line,
+          column: position?.column,
+        });
+      }
     }
   }
 
@@ -380,10 +410,18 @@ export class SCXMLValidator {
   ): void {
     // Final requires 'id' attribute if it is a target of transitions
     if (!final['@_id']) {
-      errors.push({
-        message: `Final state at ${path} should have an 'id' attribute if it is a target of transitions`,
-        severity: 'warning',
-      });
+      const position = this.findElementPosition('final', path);
+      const errorKey = `missing_final_id_${path}`;
+      
+      if (!this.reportedErrors.has(errorKey)) {
+        this.reportedErrors.add(errorKey);
+        errors.push({
+          message: `Final state missing required 'id' attribute. All final states should have unique identifiers for proper SCXML functionality.`,
+          severity: 'error',
+          line: position?.line,
+          column: position?.column,
+        });
+      }
     }
   }
 
@@ -394,9 +432,15 @@ export class SCXMLValidator {
   ): void {
     // Transition requires 'target' attribute if not internal/self-transition
     if (!transition['@_target'] && transition['@_type'] !== 'internal') {
+      const position = this.findElementPosition('transition', path);
+      const event = transition['@_event'];
+      const eventInfo = event ? ` (triggered by "${event}")` : '';
+      
       errors.push({
-        message: `Transition at ${path} must have a 'target' attribute if it is not an internal transition`,
+        message: `Missing required 'target' attribute in <transition> element${eventInfo}. Specify which state this transition should go to, or add type="internal" for transitions that stay in the same state.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -408,9 +452,13 @@ export class SCXMLValidator {
   ): void {
     // History requires 'id' attribute if referenced by transitions
     if (!history['@_id']) {
+      const position = this.findElementPosition('history', path);
+      
       errors.push({
-        message: `History element at ${path} should have an 'id' attribute if referenced by transitions`,
-        severity: 'warning',
+        message: `History element missing required 'id' attribute. History elements need unique identifiers to be referenced by transitions.`,
+        severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -422,9 +470,13 @@ export class SCXMLValidator {
   ): void {
     // Initial must contain a transition
     if (!initial.transition) {
+      const position = this.findElementPosition('initial', path);
+      
       errors.push({
-        message: `Initial element at ${path} must contain a transition`,
+        message: `Initial element must contain a <transition> element. The initial element defines the default transition to take when entering a compound state.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -436,9 +488,13 @@ export class SCXMLValidator {
   ): void {
     // Invoke requires 'type' or 'src' attribute
     if (!invoke['@_type'] && !invoke['@_src']) {
+      const position = this.findElementPosition('invoke', path);
+      
       errors.push({
-        message: `Invoke element at ${path} must have either 'type' or 'src' attribute`,
+        message: `Missing required invocation specification in <invoke> element. Must have either 'type' (invocation type) or 'src' (external service URL) attribute.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -450,9 +506,13 @@ export class SCXMLValidator {
   ): void {
     // Data requires 'id' attribute
     if (!data['@_id']) {
+      const position = this.findElementPosition('data', path);
+      
       errors.push({
-        message: `Data element at ${path} must have an 'id' attribute`,
+        message: `Missing required 'id' attribute in <data> element. The 'id' attribute provides a unique name for the data variable.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -464,9 +524,13 @@ export class SCXMLValidator {
   ): void {
     // Assign requires 'location' attribute
     if (!assign['@_location']) {
+      const position = this.findElementPosition('assign', path);
+      
       errors.push({
-        message: `Assign element at ${path} must have a 'location' attribute`,
+        message: `Missing required 'location' attribute in <assign> element. The 'location' attribute specifies which data variable to modify.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -478,9 +542,13 @@ export class SCXMLValidator {
   ): void {
     // Send requires 'event' or 'eventexpr' attribute
     if (!send['@_event'] && !send['@_eventexpr']) {
+      const position = this.findElementPosition('send', path);
+      
       errors.push({
-        message: `Send element at ${path} must have either 'event' or 'eventexpr' attribute`,
+        message: `Missing required event specification in <send> element. Must have either 'event' (static event name) or 'eventexpr' (dynamic event expression) attribute.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -492,9 +560,13 @@ export class SCXMLValidator {
   ): void {
     // Cancel requires 'sendid' or 'sendidexpr' attribute
     if (!cancel['@_sendid'] && !cancel['@_sendidexpr']) {
+      const position = this.findElementPosition('cancel', path);
+      
       errors.push({
-        message: `Cancel element at ${path} must have either 'sendid' or 'sendidexpr' attribute`,
+        message: `Missing required send identifier in <cancel> element. Must have either 'sendid' (static ID) or 'sendidexpr' (dynamic expression) attribute to identify which sent event to cancel.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -506,9 +578,13 @@ export class SCXMLValidator {
   ): void {
     // Raise requires 'event' attribute
     if (!raise['@_event']) {
+      const position = this.findElementPosition('raise', path);
+      
       errors.push({
-        message: `Raise element at ${path} must have an 'event' attribute`,
+        message: `Missing required 'event' attribute in <raise> element. The 'event' attribute specifies which event to trigger within the state machine.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -520,9 +596,14 @@ export class SCXMLValidator {
   ): void {
     // Log requires 'expr' attribute
     if (!log['@_expr']) {
+      const position = this.getElementPosition(log);
+      const friendlyMessage = this.createFriendlyLogErrorMessage(log, path);
+      
       errors.push({
-        message: `Log element at ${path} must have an 'expr' attribute`,
+        message: friendlyMessage,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -534,9 +615,13 @@ export class SCXMLValidator {
   ): void {
     // If requires 'cond' attribute
     if (!ifElement['@_cond']) {
+      const position = this.findElementPosition('if', path);
+      
       errors.push({
-        message: `If element at ${path} must have a 'cond' attribute`,
+        message: `Missing required 'cond' attribute in <if> element. The 'cond' attribute must contain a boolean expression that determines when to execute the if block.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -548,9 +633,13 @@ export class SCXMLValidator {
   ): void {
     // ElseIf requires 'cond' attribute
     if (!elseif['@_cond']) {
+      const position = this.findElementPosition('elseif', path);
+      
       errors.push({
-        message: `ElseIf element at ${path} must have a 'cond' attribute`,
+        message: `Missing required 'cond' attribute in <elseif> element. The 'cond' attribute must contain a boolean expression that determines when to execute the elseif block.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -561,16 +650,22 @@ export class SCXMLValidator {
     path: string
   ): void {
     // ForEach requires 'item' and 'array' attributes
+    const position = this.findElementPosition('foreach', path);
+    
     if (!foreach['@_item']) {
       errors.push({
-        message: `ForEach element at ${path} must have an 'item' attribute`,
+        message: `Missing required 'item' attribute in <foreach> element. The 'item' attribute specifies the variable name for each iteration.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
     if (!foreach['@_array']) {
       errors.push({
-        message: `ForEach element at ${path} must have an 'array' attribute`,
+        message: `Missing required 'array' attribute in <foreach> element. The 'array' attribute specifies which array to iterate over.`,
         severity: 'error',
+        line: position?.line,
+        column: position?.column,
       });
     }
   }
@@ -623,20 +718,14 @@ export class SCXMLValidator {
     scxml: SCXMLElement,
     errors: ValidationError[]
   ): void {
-    // Validate states have IDs
-    this.validateElementsHaveIds(scxml.state, 'State', errors);
-
-    // Validate parallel states have IDs
-    this.validateElementsHaveIds(scxml.parallel, 'Parallel state', errors);
-
-    // Validate final states have IDs
-    this.validateElementsHaveIds(scxml.final, 'Final state', errors);
-
-    // Validate nested state structures
+    // Note: ID validation is now handled by validateRequiredAttributesRecursive
+    // to avoid duplicate error messages
+    
+    // Validate nested state structures for other structural issues
     if (scxml.state) {
       const states = Array.isArray(scxml.state) ? scxml.state : [scxml.state];
       states.forEach((state) => {
-        this.validateNestedStateStructure(state, errors);
+        this.validateNestedStateStructureNonIds(state, errors);
       });
     }
 
@@ -645,57 +734,26 @@ export class SCXMLValidator {
         ? scxml.parallel
         : [scxml.parallel];
       parallels.forEach((parallel) => {
-        this.validateNestedParallelStructure(parallel, errors);
+        this.validateNestedParallelStructureNonIds(parallel, errors);
       });
     }
   }
 
-  private validateElementsHaveIds(
-    elements:
-      | StateElement
-      | StateElement[]
-      | ParallelElement
-      | ParallelElement[]
-      | FinalElement
-      | FinalElement[]
-      | HistoryElement
-      | HistoryElement[]
-      | undefined,
-    elementType: string,
-    errors: ValidationError[]
-  ): void {
-    if (elements) {
-      const elementArray = Array.isArray(elements) ? elements : [elements];
-      elementArray.forEach((element, index) => {
-        if (!element['@_id']) {
-          errors.push({
-            message: `${elementType} at index ${index} must have an id attribute`,
-            severity: 'error',
-          });
-        }
-      });
-    }
-  }
+  // Note: validateElementsHaveIds was removed to prevent duplicate error messages.
+  // ID validation is now handled by validateRequiredAttributesRecursive with better error messages.
 
-  private validateNestedStateStructure(
+  private validateNestedStateStructureNonIds(
     state: StateElement,
     errors: ValidationError[]
   ): void {
-    // Validate nested states
-    this.validateElementsHaveIds(state.state, 'Nested state', errors);
-    this.validateElementsHaveIds(
-      state.parallel,
-      'Nested parallel state',
-      errors
-    );
-    this.validateElementsHaveIds(state.final, 'Nested final state', errors);
-    this.validateElementsHaveIds(state.history, 'History state', errors);
+    // Note: ID validation is handled by validateRequiredAttributesRecursive
+    // This method focuses on other structural validation
 
     // Recursively validate nested states
     if (state.state) {
       const states = Array.isArray(state.state) ? state.state : [state.state];
       states.forEach((nestedState) => {
-        this.validateNestedStateStructure(nestedState, errors);
+        this.validateNestedStateStructureNonIds(nestedState, errors);
       });
     }
 
@@ -704,27 +762,17 @@ export class SCXMLValidator {
         ? state.parallel
         : [state.parallel];
       parallels.forEach((parallel) => {
-        this.validateNestedParallelStructure(parallel, errors);
+        this.validateNestedParallelStructureNonIds(parallel, errors);
       });
     }
   }
 
-  private validateNestedParallelStructure(
+  private validateNestedParallelStructureNonIds(
     parallel: ParallelElement,
     errors: ValidationError[]
   ): void {
-    // Validate nested states in parallel
-    this.validateElementsHaveIds(parallel.state, 'State in parallel', errors);
-    this.validateElementsHaveIds(
-      parallel.parallel,
-      'Nested parallel state',
-      errors
-    );
-    this.validateElementsHaveIds(
-      parallel.history,
-      'History state in parallel',
-      errors
-    );
+    // Note: ID validation is handled by validateRequiredAttributesRecursive
+    // This method focuses on other structural validation
 
     // Recursively validate nested structures
     if (parallel.state) {
@@ -732,7 +780,7 @@ export class SCXMLValidator {
         ? parallel.state
         : [parallel.state];
       states.forEach((state: StateElement) => {
-        this.validateNestedStateStructure(state, errors);
+        this.validateNestedStateStructureNonIds(state, errors);
       });
     }
 
@@ -741,7 +789,7 @@ export class SCXMLValidator {
         ? parallel.parallel
         : [parallel.parallel];
       parallels.forEach((nestedParallel: ParallelElement) => {
-        this.validateNestedParallelStructure(nestedParallel, errors);
+        this.validateNestedParallelStructureNonIds(nestedParallel, errors);
       });
     }
   }
@@ -1626,5 +1674,97 @@ export class SCXMLValidator {
 
   private getValidForeachAttributes(): Set<string> {
     return new Set(['array', 'item', 'index']);
+  }
+
+  private parseElementPositions(xmlContent: string): void {
+    // This is a simplified position tracking - in a real implementation,
+    // you might want to use a more sophisticated XML parser with position tracking
+    const lines = xmlContent.split('\n');
+    
+    // Common SCXML elements to track
+    const elementsToTrack = ['log', 'assign', 'send', 'raise', 'data', 'invoke', 'if', 'transition', 'state'];
+    
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const lineNumber = lineIndex + 1;
+      
+      // Track all common SCXML elements
+      for (const elementName of elementsToTrack) {
+        const regex = new RegExp(`<${elementName}\\b[^>]*>`, 'g');
+        const matches = line.match(regex);
+        if (matches) {
+          const columnIndex = line.indexOf(`<${elementName}`);
+          if (columnIndex !== -1) {
+            const position = {
+              line: lineNumber,
+              column: columnIndex + 1
+            };
+            
+            // Store position for this element type on this line
+            this.storePositionForPattern(elementName, lineNumber, position);
+          }
+        }
+      }
+    }
+  }
+
+  private storePositionForPattern(elementName: string, lineNumber: number, position: { line: number; column: number }): void {
+    // Store position based on element type and line number
+    // In practice, you'd want to associate positions with actual element objects
+    this.elementPositions.set(`${elementName}_line_${lineNumber}`, position);
+  }
+
+  private getElementPosition(element: any): { line: number; column: number } | undefined {
+    // Try to find position by looking for stored positions
+    // This is a simplified lookup - real implementation would map actual objects
+    for (const [key, position] of this.elementPositions.entries()) {
+      if (key.toString().includes('log_line_')) {
+        return position;
+      }
+    }
+    return undefined;
+  }
+
+  private findElementPosition(elementType: string, path: string): { line: number; column: number } | undefined {
+    // Extract line information from path if possible, or find the first occurrence of this element type
+    const pathParts = path.split('.');
+    
+    // Try to find position by element type
+    for (const [key, position] of this.elementPositions.entries()) {
+      if (key.startsWith(`${elementType}_line_`)) {
+        return position;
+      }
+    }
+    
+    return undefined;
+  }
+
+  private createFriendlyLogErrorMessage(log: LogElement, path: string): string {
+    const label = log['@_label'];
+    const contextInfo = label ? ` (with label "${label}")` : '';
+    const pathParts = path.split('.');
+    const lineInfo = this.getElementPosition(log);
+    const locationInfo = lineInfo ? `at line ${lineInfo.line}, column ${lineInfo.column}` : `at ${path}`;
+    
+    // Create a more user-friendly error message
+    return `Missing required 'expr' attribute in <log> element${contextInfo} ${locationInfo}. ` +
+           `The 'expr' attribute specifies what to log and is required for all <log> elements.`;
+  }
+
+  private deduplicateErrors(errors: ValidationError[]): ValidationError[] {
+    const seen = new Set<string>();
+    const deduplicated: ValidationError[] = [];
+    
+    for (const error of errors) {
+      // Create a key based on message and position for deduplication
+      const key = `${error.message}_${error.line || 'no-line'}_${error.column || 'no-col'}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(error);
+      }
+    }
+    
+    return deduplicated;
   }
 }

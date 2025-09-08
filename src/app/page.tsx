@@ -58,7 +58,7 @@ export default function Home() {
       let allErrors = [...parseResult.errors];
 
       if (parseResult.success && parseResult.data) {
-        const validationErrors = validator.validate(parseResult.data.scxml);
+        const validationErrors = validator.validate(parseResult.data.scxml, xmlContent);
         allErrors = [...allErrors, ...validationErrors];
       }
 

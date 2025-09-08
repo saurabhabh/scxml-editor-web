@@ -32,7 +32,7 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
       errors = [],
       readOnly = false,
       height = '500px',
-      theme = 'light',
+      theme = 'dark',
     },
     ref
   ) => {
@@ -173,13 +173,13 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
               formatOnPaste: true,
               formatOnType: true,
               suggestOnTriggerCharacters: true,
-              quickSuggestions: true, // Simplified to true
+              quickSuggestions: false, // Disable automatic suggestions
               quickSuggestionsDelay: 10,
               parameterHints: { enabled: true },
               hover: { enabled: true, delay: 300 },
               folding: true,
               foldingStrategy: 'indentation',
-              inlineSuggest: { enabled: true },
+              inlineSuggest: { enabled: false }, // Disable inline suggestions
               suggest: {
                 preview: true,
                 showInlineDetails: true,
@@ -209,33 +209,6 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
               },
             });
 
-            // Test completion trigger after a delay AND re-register provider
-            setTimeout(() => {
-              if (editor.getModel()) {
-                const lateProvider =
-                  createEnhancedSCXMLCompletionProvider(monaco);
-                const lateDisposable =
-                  monaco.languages.registerCompletionItemProvider(
-                    editor.getModel()?.getLanguageId() || 'xml',
-                    lateProvider
-                  );
-
-                // Test manual trigger
-                editor.trigger('test', 'editor.action.triggerSuggest', {});
-              }
-            }, 2000);
-
-            // Also try registering on the next tick to ensure Monaco is ready
-            setTimeout(() => {
-              const finalProvider =
-                createEnhancedSCXMLCompletionProvider(monaco);
-              const finalDisposable =
-                monaco.languages.registerCompletionItemProvider(
-                  'xml',
-                  finalProvider
-                );
-              editor.trigger('final-test', 'editor.action.triggerSuggest', {});
-            }, 100);
 
             console.log('✅ SCXML Editor setup complete!');
           } catch (error) {
@@ -307,11 +280,7 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
             insertSpaces: true,
             // Completion options - simplified to avoid conflicts
             suggestOnTriggerCharacters: true,
-            quickSuggestions: {
-              other: true,
-              comments: false,
-              strings: false,
-            },
+            quickSuggestions: false, // Disable automatic suggestions
             parameterHints: { enabled: true },
             suggest: {
               showKeywords: true,
