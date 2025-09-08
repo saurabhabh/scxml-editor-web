@@ -17,13 +17,13 @@ const DEFAULT_SCXML_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
   
   <state id="active">
     <onentry>
-      <log label="Entering active state" />
+      <log label="Entering active state" expr="value" />
     </onentry>
     
     <transition event="stop" target="idle" />
     
     <onexit>
-      <log label="Exiting active state" />
+      <log label="Exiting active state" expr="value" />
     </onexit>
   </state>
 </scxml>`;

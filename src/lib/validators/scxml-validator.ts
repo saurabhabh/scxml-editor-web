@@ -273,33 +273,350 @@ export class SCXMLValidator {
     scxml: SCXMLElement,
     errors: ValidationError[]
   ): void {
-    // Check for required SCXML attributes
-    if (!scxml['@_name'] && !scxml['@_initial'] && !scxml.state) {
-      errors.push({
-        message:
-          'SCXML must have either a name attribute, initial attribute, or at least one state',
-        severity: 'warning',
-      });
+    // Validate required attributes for all elements in the SCXML document
+    this.validateRequiredAttributesRecursive(scxml, errors);
+  }
+
+  private validateRequiredAttributesRecursive(
+    element: any,
+    errors: ValidationError[],
+    elementName: string = 'scxml',
+    path: string = ''
+  ): void {
+    if (!element) return;
+
+    const currentPath = path ? `${path}.${elementName}` : elementName;
+
+    // Validate based on element type
+    switch (elementName) {
+      case 'state':
+        this.validateStateRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'parallel':
+        this.validateParallelRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'final':
+        this.validateFinalRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'transition':
+        this.validateTransitionRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'history':
+        this.validateHistoryRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'initial':
+        this.validateInitialRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'invoke':
+        this.validateInvokeRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'data':
+        this.validateDataRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'assign':
+        this.validateAssignRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'send':
+        this.validateSendRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'cancel':
+        this.validateCancelRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'raise':
+        this.validateRaiseRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'log':
+        this.validateLogRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'if':
+        this.validateIfRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'elseif':
+        this.validateElseIfRequiredAttributes(element, errors, currentPath);
+        break;
+      case 'foreach':
+        this.validateForEachRequiredAttributes(element, errors, currentPath);
+        break;
     }
 
-    // Validate version attribute
-    if (scxml['@_version'] && String(scxml['@_version']) !== '1.0') {
-      errors.push({
-        message: `Unsupported SCXML version '${scxml['@_version']}'. Expected '1.0'`,
-        severity: 'warning',
-      });
-    }
+    // Recursively validate child elements
+    this.validateChildElements(element, errors, currentPath);
+  }
 
-    // Validate namespace
-    if (
-      scxml['@_xmlns'] &&
-      scxml['@_xmlns'] !== 'http://www.w3.org/2005/07/scxml'
-    ) {
+  private validateStateRequiredAttributes(
+    state: StateElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // State requires 'id' attribute if it is a target of transitions
+    // Since we can't easily determine if it's a target here, we'll check if it has an ID
+    // and warn if it doesn't (as most states should have IDs for proper functioning)
+    if (!state['@_id']) {
       errors.push({
-        message: `Invalid SCXML namespace '${scxml['@_xmlns']}'. Expected 'http://www.w3.org/2005/07/scxml'`,
+        message: `State at ${path} should have an 'id' attribute if it is a target of transitions`,
         severity: 'warning',
       });
     }
+  }
+
+  private validateParallelRequiredAttributes(
+    parallel: ParallelElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Parallel requires 'id' attribute if it is a target of transitions
+    if (!parallel['@_id']) {
+      errors.push({
+        message: `Parallel state at ${path} should have an 'id' attribute if it is a target of transitions`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  private validateFinalRequiredAttributes(
+    final: FinalElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Final requires 'id' attribute if it is a target of transitions
+    if (!final['@_id']) {
+      errors.push({
+        message: `Final state at ${path} should have an 'id' attribute if it is a target of transitions`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  private validateTransitionRequiredAttributes(
+    transition: TransitionElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Transition requires 'target' attribute if not internal/self-transition
+    if (!transition['@_target'] && transition['@_type'] !== 'internal') {
+      errors.push({
+        message: `Transition at ${path} must have a 'target' attribute if it is not an internal transition`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateHistoryRequiredAttributes(
+    history: HistoryElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // History requires 'id' attribute if referenced by transitions
+    if (!history['@_id']) {
+      errors.push({
+        message: `History element at ${path} should have an 'id' attribute if referenced by transitions`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  private validateInitialRequiredAttributes(
+    initial: any,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Initial must contain a transition
+    if (!initial.transition) {
+      errors.push({
+        message: `Initial element at ${path} must contain a transition`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateInvokeRequiredAttributes(
+    invoke: InvokeElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Invoke requires 'type' or 'src' attribute
+    if (!invoke['@_type'] && !invoke['@_src']) {
+      errors.push({
+        message: `Invoke element at ${path} must have either 'type' or 'src' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateDataRequiredAttributes(
+    data: DataElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Data requires 'id' attribute
+    if (!data['@_id']) {
+      errors.push({
+        message: `Data element at ${path} must have an 'id' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateAssignRequiredAttributes(
+    assign: AssignElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Assign requires 'location' attribute
+    if (!assign['@_location']) {
+      errors.push({
+        message: `Assign element at ${path} must have a 'location' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateSendRequiredAttributes(
+    send: SendElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Send requires 'event' or 'eventexpr' attribute
+    if (!send['@_event'] && !send['@_eventexpr']) {
+      errors.push({
+        message: `Send element at ${path} must have either 'event' or 'eventexpr' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateCancelRequiredAttributes(
+    cancel: CancelElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Cancel requires 'sendid' or 'sendidexpr' attribute
+    if (!cancel['@_sendid'] && !cancel['@_sendidexpr']) {
+      errors.push({
+        message: `Cancel element at ${path} must have either 'sendid' or 'sendidexpr' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateRaiseRequiredAttributes(
+    raise: RaiseElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Raise requires 'event' attribute
+    if (!raise['@_event']) {
+      errors.push({
+        message: `Raise element at ${path} must have an 'event' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateLogRequiredAttributes(
+    log: LogElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // Log requires 'expr' attribute
+    if (!log['@_expr']) {
+      errors.push({
+        message: `Log element at ${path} must have an 'expr' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateIfRequiredAttributes(
+    ifElement: IfElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // If requires 'cond' attribute
+    if (!ifElement['@_cond']) {
+      errors.push({
+        message: `If element at ${path} must have a 'cond' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateElseIfRequiredAttributes(
+    elseif: ElseIfElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // ElseIf requires 'cond' attribute
+    if (!elseif['@_cond']) {
+      errors.push({
+        message: `ElseIf element at ${path} must have a 'cond' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateForEachRequiredAttributes(
+    foreach: ForEachElement,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    // ForEach requires 'item' and 'array' attributes
+    if (!foreach['@_item']) {
+      errors.push({
+        message: `ForEach element at ${path} must have an 'item' attribute`,
+        severity: 'error',
+      });
+    }
+    if (!foreach['@_array']) {
+      errors.push({
+        message: `ForEach element at ${path} must have an 'array' attribute`,
+        severity: 'error',
+      });
+    }
+  }
+
+  private validateChildElements(
+    element: any,
+    errors: ValidationError[],
+    path: string
+  ): void {
+    if (!element) return;
+
+    // Define the mapping of property names to element types
+    const elementMappings = [
+      { prop: 'state', type: 'state' },
+      { prop: 'parallel', type: 'parallel' },
+      { prop: 'final', type: 'final' },
+      { prop: 'history', type: 'history' },
+      { prop: 'initial', type: 'initial' },
+      { prop: 'transition', type: 'transition' },
+      { prop: 'onentry', type: 'onentry' },
+      { prop: 'onexit', type: 'onexit' },
+      { prop: 'invoke', type: 'invoke' },
+      { prop: 'datamodel', type: 'datamodel' },
+      { prop: 'data', type: 'data' },
+      { prop: 'script', type: 'script' },
+      { prop: 'assign', type: 'assign' },
+      { prop: 'send', type: 'send' },
+      { prop: 'raise', type: 'raise' },
+      { prop: 'log', type: 'log' },
+      { prop: 'cancel', type: 'cancel' },
+      { prop: 'if', type: 'if' },
+      { prop: 'elseif', type: 'elseif' },
+      { prop: 'else', type: 'else' },
+      { prop: 'foreach', type: 'foreach' },
+    ];
+
+    // Process each type of child element
+    elementMappings.forEach(({ prop, type }) => {
+      if (element[prop]) {
+        const children = Array.isArray(element[prop]) ? element[prop] : [element[prop]];
+        children.forEach((child: any, index: number) => {
+          const childPath = `${path}.${prop}[${index}]`;
+          this.validateRequiredAttributesRecursive(child, errors, type, childPath);
+        });
+      }
+    });
   }
 
   private validateStateStructure(
