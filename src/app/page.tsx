@@ -3,30 +3,45 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { XMLEditor, type XMLEditorRef } from '@/components/editor';
 import { FileUpload, FileDownload } from '@/components/file-operations';
+import { TwoTabLayout } from '@/components/layout';
+import { VisualDiagram } from '@/components/diagram';
 import { Upload } from 'lucide-react';
 import { ErrorBoundary, ValidationPanel } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
+import { SCXMLToXStateConverter } from '@/lib/converters';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
 
-const DEFAULT_SCXML_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
-  <state id="idle">
-    <transition event="start" target="active" />
-  </state>
-  
-  <state id="active">
+const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="red">
+  <!-- Red Light (5s) -->
+  <state id="red">
     <onentry>
-      <log label="Entering active state" expr="value" />
+      <log label="Traffic Light" expr="'Red'" />
+      <send event="next" delay="5s"/>
     </onentry>
-    
-    <transition event="stop" target="idle" />
-    
-    <onexit>
-      <log label="Exiting active state" expr="value" />
-    </onexit>
+    <transition event="next" target="green"/>
   </state>
-</scxml>`;
+
+  <!-- Green Light (3s) -->
+  <state id="green">
+    <onentry>
+      <log label="Traffic Light" expr="'Green'" />
+      <send event="next" delay="3s"/>
+    </onentry>
+    <transition event="next" target="yellow"/>
+  </state>
+
+  <!-- Yellow Light (2s) -->
+  <state id="yellow">
+    <onentry>
+      <log label="Traffic Light" expr="'Yellow'" />
+      <send event="next" delay="2s"/>
+    </onentry>
+    <transition event="next" target="red"/>
+  </state>
+
+</scxml>
+`;
 
 export default function Home() {
   const {
@@ -43,6 +58,7 @@ export default function Home() {
 
   const parser = useMemo(() => new SCXMLParser(), []);
   const validator = useMemo(() => new SCXMLValidator(), []);
+  const converter = useMemo(() => new SCXMLToXStateConverter(), []);
   const editorRef = useRef<XMLEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,7 +74,10 @@ export default function Home() {
       let allErrors = [...parseResult.errors];
 
       if (parseResult.success && parseResult.data) {
-        const validationErrors = validator.validate(parseResult.data.scxml, xmlContent);
+        const validationErrors = validator.validate(
+          parseResult.data.scxml,
+          xmlContent
+        );
         allErrors = [...allErrors, ...validationErrors];
       }
 
@@ -200,113 +219,107 @@ export default function Home() {
   const hasErrors = errors.filter((e) => e.severity === 'error').length > 0;
   const hasWarnings = errors.filter((e) => e.severity === 'warning').length > 0;
 
+  const renderCodeEditor = () => (
+    <>
+      <XMLEditor
+        ref={editorRef}
+        value={content}
+        onChange={handleContentChange}
+        errors={errors}
+        height='calc(100vh - 200px)'
+      />
+      {isValidationPanelVisible && (
+        <div className='mt-4'>
+          <ValidationPanel
+            errors={errors}
+            isVisible={isValidationPanelVisible}
+            onClose={() => setValidationPanelVisible(false)}
+            onErrorClick={handleErrorClick}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  const renderVisualDiagram = () => (
+    <div className='h-full'>
+      <VisualDiagram
+        scxmlContent={content}
+        onNodeChange={(nodes) => {
+          // TODO: Implement visual metadata sync
+          console.log('Nodes changed:', nodes);
+        }}
+        onEdgeChange={(edges) => {
+          // TODO: Implement visual metadata sync
+          console.log('Edges changed:', edges);
+        }}
+      />
+    </div>
+  );
+
+  const renderActions = () => (
+    <>
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='.scxml,.xml'
+        onChange={handleFileInputChange}
+        className='hidden'
+      />
+
+      <button
+        onClick={handleNewFileUpload}
+        className='flex items-center space-x-2 text-sm px-3 py-2 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
+      >
+        <Upload className='h-4 w-4' />
+        <span>Load New File</span>
+      </button>
+
+      <button
+        onClick={() => setValidationPanelVisible(!isValidationPanelVisible)}
+        className={`text-sm px-3 py-2 rounded-md transition-colors ${
+          hasErrors
+            ? 'bg-red-100 text-red-800 hover:bg-red-200'
+            : hasWarnings
+            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+            : 'bg-green-100 text-green-800 hover:bg-green-200'
+        }`}
+      >
+        {errors.length === 0
+          ? 'Valid'
+          : `${errors.filter((e) => e.severity === 'error').length} errors, ${
+              errors.filter((e) => e.severity === 'warning').length
+            } warnings`}
+      </button>
+
+      <FileDownload content={content} filename={getDownloadFilename()} />
+    </>
+  );
+
   return (
     <ErrorBoundary>
       <div className='min-h-screen bg-gray-50 overflow-hidden'>
-        <div className='container mx-auto px-4 py-8'>
-          <div className='mb-5'>
-            <h1 className='text-3xl font-bold text-gray-900 mb-2'>
-              SCXML Parser & Editor
-            </h1>
-            <p className='text-gray-600'>
-              Load, edit, and validate SCXML files with real-time syntax
-              checking
-            </p>
-          </div>
-
-          <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
-            <div className='lg:col-span-2 space-y-6'>
-              {!content && (
-                <div className='bg-white rounded-lg shadow-sm p-6'>
-                  <FileUpload
-                    onFileLoad={handleFileLoad}
-                    onError={handleFileError}
-                  />
-                </div>
-              )}
-
-              {content && (
-                <div className='bg-white rounded-lg shadow-sm p-6'>
-                  <input
-                    ref={fileInputRef}
-                    type='file'
-                    accept='.scxml,.xml'
-                    onChange={handleFileInputChange}
-                    className='hidden'
-                  />
-                  <div className='flex items-center justify-between mb-4'>
-                    <div className='flex items-center space-x-4'>
-                      <h2 className='text-lg font-semibold text-gray-900'>
-                        {fileInfo?.name || 'Untitled Document'}
-                      </h2>
-                      {isDirty && (
-                        <span className='text-xs text-amber-600 font-medium'>
-                          • Modified
-                        </span>
-                      )}
-                    </div>
-
-                    <div className='flex items-center space-x-3'>
-                      <button
-                        onClick={handleNewFileUpload}
-                        className='flex items-center space-x-2 text-sm px-3 py-1 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
-                      >
-                        <Upload className='h-4 w-4' />
-                        <span>Load New File</span>
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          setValidationPanelVisible(!isValidationPanelVisible)
-                        }
-                        className={`text-sm px-3 py-1 rounded-md transition-colors ${
-                          hasErrors
-                            ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                            : hasWarnings
-                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                            : 'bg-green-100 text-green-800 hover:bg-green-200'
-                        }`}
-                      >
-                        {errors.length === 0
-                          ? 'Valid'
-                          : `${
-                              errors.filter((e) => e.severity === 'error')
-                                .length
-                            } errors, ${
-                              errors.filter((e) => e.severity === 'warning')
-                                .length
-                            } warnings`}
-                      </button>
-
-                      <FileDownload
-                        content={content}
-                        filename={getDownloadFilename()}
-                      />
-                    </div>
-                  </div>
-
-                  <XMLEditor
-                    ref={editorRef}
-                    value={content}
-                    onChange={handleContentChange}
-                    errors={errors}
-                    height='62vh'
-                  />
-                </div>
-              )}
+        {!content ? (
+          <div className='container mx-auto px-4 py-8'>
+            <div className='mb-8'>
+              <h1 className='text-3xl font-bold text-gray-900 mb-2'>
+                Visual SCXML Editor
+              </h1>
+              <p className='text-gray-600'>
+                Edit SCXML files with syntax highlighting, validation, and
+                interactive visual diagrams
+              </p>
             </div>
 
-            <div className='space-y-6'>
-              {content && (
-                <ValidationPanel
-                  errors={errors}
-                  isVisible={isValidationPanelVisible}
-                  onClose={() => setValidationPanelVisible(false)}
-                  onErrorClick={handleErrorClick}
+            <div className='grid grid-cols-1 lg:grid-cols-2 gap-8'>
+              <div className='bg-white rounded-lg shadow-sm p-6'>
+                <FileUpload
+                  onFileLoad={handleFileLoad}
+                  onError={handleFileError}
                 />
-              )}
+              </div>
 
-              {!content && (
+              <div className='space-y-6'>
                 <div className='bg-white rounded-lg shadow-sm p-6'>
                   <h3 className='text-lg font-semibold text-gray-900 mb-4'>
                     Getting Started
@@ -333,15 +346,14 @@ export default function Home() {
                         2
                       </div>
                       <p>
-                        Edit your SCXML with syntax highlighting and
-                        autocomplete
+                        Edit with syntax highlighting and real-time validation
                       </p>
                     </div>
                     <div className='flex items-start space-x-3'>
                       <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
                         3
                       </div>
-                      <p>Real-time validation shows errors and warnings</p>
+                      <p>Switch to visual diagram for interactive editing</p>
                     </div>
                     <div className='flex items-start space-x-3'>
                       <div className='flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium'>
@@ -351,38 +363,50 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-              )}
 
-              <div className='bg-white rounded-lg shadow-sm p-6'>
-                <h3 className='text-lg font-semibold text-gray-900 mb-4'>
-                  Features
-                </h3>
-                <ul className='space-y-2 text-sm text-gray-600'>
-                  <li className='flex items-center space-x-2'>
-                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
-                    <span>XML syntax highlighting</span>
-                  </li>
-                  <li className='flex items-center space-x-2'>
-                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
-                    <span>SCXML-specific autocomplete</span>
-                  </li>
-                  <li className='flex items-center space-x-2'>
-                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
-                    <span>Real-time validation</span>
-                  </li>
-                  <li className='flex items-center space-x-2'>
-                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
-                    <span>Error highlighting in editor</span>
-                  </li>
-                  <li className='flex items-center space-x-2'>
-                    <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
-                    <span>File import/export</span>
-                  </li>
-                </ul>
+                <div className='bg-white rounded-lg shadow-sm p-6'>
+                  <h3 className='text-lg font-semibold text-gray-900 mb-4'>
+                    Features
+                  </h3>
+                  <ul className='space-y-2 text-sm text-gray-600'>
+                    <li className='flex items-center space-x-2'>
+                      <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
+                      <span>Two-way synchronization (Code ↔ Visual)</span>
+                    </li>
+                    <li className='flex items-center space-x-2'>
+                      <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
+                      <span>Interactive state diagram editing</span>
+                    </li>
+                    <li className='flex items-center space-x-2'>
+                      <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
+                      <span>SCXML-specific autocomplete</span>
+                    </li>
+                    <li className='flex items-center space-x-2'>
+                      <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
+                      <span>Real-time validation</span>
+                    </li>
+                    <li className='flex items-center space-x-2'>
+                      <div className='w-1.5 h-1.5 bg-green-500 rounded-full'></div>
+                      <span>Visual metadata preservation</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className='h-screen'>
+            <TwoTabLayout
+              codeEditor={renderCodeEditor()}
+              visualDiagram={renderVisualDiagram()}
+              fileInfo={{
+                name: fileInfo?.name,
+                isDirty,
+              }}
+              actions={renderActions()}
+            />
+          </div>
+        )}
       </div>
     </ErrorBoundary>
   );

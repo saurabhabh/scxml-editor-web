@@ -81,7 +81,7 @@ User can:
 3. Create visual metadata namespace handler (`xmlns:visual`)
 4. Build basic state visualization (rectangles with labels)
 5. Implement basic transition visualization (arrows between states)
-6. Create synchronization system between tabs using Redux Toolkit
+6. Create synchronization system between tabs using Zustand store
 7. Add metadata serialization/deserialization
 
 ### Deliverables
@@ -105,11 +105,12 @@ User can:
   "dependencies": {
     "d3": "^7.8.5",
     "@types/d3": "^7.4.3",
-    "@reduxjs/toolkit": "^2.0.0",
     "react-tabs": "^6.0.2"
   }
 }
 ```
+
+**Note:** Redux Toolkit removed as the project uses Zustand for state management, which is already installed and better suited for this use case.
 
 ---
 
