@@ -33,29 +33,35 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     try {
       const parser = new SCXMLParser();
       const converter = new SCXMLToXStateConverter();
-      
+
       console.log('Parsing SCXML content...');
       const parseResult = parser.parse(scxmlContent);
       console.log('Parse result:', parseResult);
-      
+
       if (parseResult.success && parseResult.data) {
         console.log('Creating XState machine...');
         const config = converter.convertToXState(parseResult.data);
         console.log('XState config:', config);
-        
+
         // Create a simple machine for now
         const machine = createMachine(config);
         console.log('XState machine created:', machine);
-        
+
         setError(null);
         return machine;
       } else {
-        setError('Failed to parse SCXML: ' + parseResult.errors.map(e => e.message).join(', '));
+        setError(
+          'Failed to parse SCXML: ' +
+            parseResult.errors.map((e) => e.message).join(', ')
+        );
         return null;
       }
     } catch (err) {
       console.error('Error creating machine:', err);
-      setError('Error creating machine: ' + (err instanceof Error ? err.message : String(err)));
+      setError(
+        'Error creating machine: ' +
+          (err instanceof Error ? err.message : String(err))
+      );
       return null;
     }
   }, [scxmlContent]);
@@ -64,7 +70,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   useEffect(() => {
     const newMachine = createMachineFromSCXML();
     setMachine(newMachine);
-    
+
     if (actor) {
       actor.stop();
     }
@@ -79,14 +85,15 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
     try {
       const newActor = createActor(machine);
-      
+
       newActor.subscribe((state) => {
         console.log('State changed:', state.value);
-        const stateValue = typeof state.value === 'string' 
-          ? state.value 
-          : typeof state.value === 'object' && state.value 
-          ? Object.keys(state.value)[0] 
-          : '';
+        const stateValue =
+          typeof state.value === 'string'
+            ? state.value
+            : typeof state.value === 'object' && state.value
+            ? Object.keys(state.value)[0]
+            : '';
         console.log('Current state:', stateValue);
         setCurrentState(stateValue);
         onStateChange?.(stateValue);
@@ -97,7 +104,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       setStatus('running');
       setError(null);
     } catch (err) {
-      setError('Error starting simulation: ' + (err instanceof Error ? err.message : String(err)));
+      setError(
+        'Error starting simulation: ' +
+          (err instanceof Error ? err.message : String(err))
+      );
     }
   }, [machine, onStateChange]);
 
@@ -132,15 +142,21 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   }, [handleStop, handleStart, status]);
 
   // Send event to machine
-  const handleSendEvent = useCallback((event: string) => {
-    if (actor && status === 'running') {
-      try {
-        actor.send({ type: event });
-      } catch (err) {
-        setError('Error sending event: ' + (err instanceof Error ? err.message : String(err)));
+  const handleSendEvent = useCallback(
+    (event: string) => {
+      if (actor && status === 'running') {
+        try {
+          actor.send({ type: event });
+        } catch (err) {
+          setError(
+            'Error sending event: ' +
+              (err instanceof Error ? err.message : String(err))
+          );
+        }
       }
-    }
-  }, [actor, status]);
+    },
+    [actor, status]
+  );
 
   // Step forward (for debugging)
   const handleStep = useCallback(() => {
@@ -150,21 +166,23 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   }, []);
 
   return (
-    <div className="p-4 bg-white border-b">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <h3 className="text-sm font-medium text-gray-700">Simulation Controls</h3>
+    <div className='p-4 bg-white border-b'>
+      <div className='flex items-center justify-between'>
+        <div className='flex items-center space-x-3'>
+          <h3 className='text-sm font-medium text-gray-700'>
+            Simulation Controls
+          </h3>
           {currentState && (
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-gray-500">Current State:</span>
-              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+            <div className='flex items-center space-x-2'>
+              <span className='text-xs text-gray-500'>Current State:</span>
+              <span className='px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium'>
                 {currentState}
               </span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        {/* <div className="flex items-center space-x-2">
           {status === 'stopped' && (
             <button
               onClick={handleStart}
@@ -223,29 +241,29 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
             <StepForward className="h-3 w-3" />
             <span>Step</span>
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Event buttons - show events that can be sent */}
       {actor && status === 'running' && (
-        <div className="mt-3 pt-3 border-t">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Send Event:</span>
+        <div className='mt-3 pt-3 border-t'>
+          <div className='flex items-center space-x-2'>
+            <span className='text-xs text-gray-500'>Send Event:</span>
             <button
               onClick={() => handleSendEvent('next')}
-              className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border hover:bg-blue-100 transition-colors"
+              className='px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border hover:bg-blue-100 transition-colors'
             >
               next
             </button>
             <button
               onClick={() => handleSendEvent('start')}
-              className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded border hover:bg-green-100 transition-colors"
+              className='px-2 py-1 bg-green-50 text-green-700 text-xs rounded border hover:bg-green-100 transition-colors'
             >
               start
             </button>
             <button
               onClick={() => handleSendEvent('stop')}
-              className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded border hover:bg-red-100 transition-colors"
+              className='px-2 py-1 bg-red-50 text-red-700 text-xs rounded border hover:bg-red-100 transition-colors'
             >
               stop
             </button>
@@ -255,8 +273,8 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
       {/* Error display */}
       {error && (
-        <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded">
-          <p className="text-xs text-red-600">{error}</p>
+        <div className='mt-3 p-2 bg-red-50 border border-red-200 rounded'>
+          <p className='text-xs text-red-600'>{error}</p>
         </div>
       )}
     </div>

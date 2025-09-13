@@ -18,7 +18,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
 
 const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="red">
-  <state id="red" visual:x="100" visual:y="50" visual:fill="#FF0000" visual:stroke="#f44336">
+  <state id="red" visual:x="100" visual:y="50" visual:fill="#FFEEEE" visual:stroke="#f44336">
     <onentry>
       <log label="Traffic Light" expr="Red"></log>
       <send event="next" delay="5s"></send>
@@ -228,16 +228,19 @@ export default function Home() {
   const hasWarnings = errors.filter((e) => e.severity === 'warning').length > 0;
 
   const renderCodeEditor = () => (
-    <>
-      <XMLEditor
-        ref={editorRef}
-        value={content}
-        onChange={handleContentChange}
-        errors={errors}
-        height='calc(100vh - 200px)'
-      />
+    <div className='flex gap-4 h-[calc(100vh-200px)]'>
+      <div className='flex-1'>
+        <XMLEditor
+          ref={editorRef}
+          value={content}
+          onChange={handleContentChange}
+          errors={errors}
+          height='80vh'
+        />
+      </div>
+
       {isValidationPanelVisible && (
-        <div className='mt-4'>
+        <div className='w-80'>
           <ValidationPanel
             errors={errors}
             isVisible={isValidationPanelVisible}
@@ -246,7 +249,7 @@ export default function Home() {
           />
         </div>
       )}
-    </>
+    </div>
   );
 
   const renderVisualDiagram = () => (

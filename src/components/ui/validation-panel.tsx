@@ -60,7 +60,7 @@ export function ValidationPanel({
               )}
             </div>
 
-            <div className='space-y-2 max-h-48 overflow-y-auto'>
+            <div className='space-y-2 max-h-96 overflow-y-auto'>
               {errors.map((error, index) => (
                 <ValidationErrorItem
                   key={index}

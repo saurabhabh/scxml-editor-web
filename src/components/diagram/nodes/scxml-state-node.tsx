@@ -4,7 +4,10 @@
 import React, { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Circle, Square, Target } from 'lucide-react';
-import { visualStylesToCSS, getAdditionalClasses } from '@/lib/utils/visual-style-utils';
+import {
+  visualStylesToCSS,
+  getAdditionalClasses,
+} from '@/lib/utils/visual-style-utils';
 
 export interface VisualStyles {
   backgroundColor?: string;
@@ -25,6 +28,13 @@ export interface SCXMLStateNodeData {
   onEntryActions?: string[];
   onExitActions?: string[];
   visualStyles?: VisualStyles;
+  // Editing capabilities
+  onLabelChange?: (newLabel: string) => void;
+  onStateTypeChange?: (
+    newStateType: 'simple' | 'compound' | 'final' | 'parallel'
+  ) => void;
+  onActionsChange?: (entryActions: string[], exitActions: string[]) => void;
+  isEditing?: boolean;
 }
 
 export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
@@ -37,11 +47,91 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       entryActions = [],
       exitActions = [],
       visualStyles,
+      onLabelChange,
+      onStateTypeChange,
+      onActionsChange,
+      isEditing = false,
     } = data;
+
+    const [editingLabel, setEditingLabel] = React.useState(false);
+    const [editingActions, setEditingActions] = React.useState(false);
+    const [tempLabel, setTempLabel] = React.useState(label);
+    const [tempEntryActions, setTempEntryActions] = React.useState(
+      entryActions.join('\n')
+    );
+    const [tempExitActions, setTempExitActions] = React.useState(
+      exitActions.join('\n')
+    );
 
     const hasEntryActions = entryActions.length > 0;
     const hasExitActions = exitActions.length > 0;
     const hasActions = hasEntryActions || hasExitActions;
+
+    // Handle label editing
+    const handleLabelDoubleClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (onLabelChange) {
+        setEditingLabel(true);
+        setTempLabel(label);
+      }
+    };
+
+    const handleLabelSubmit = () => {
+      if (onLabelChange && tempLabel.trim() !== label) {
+        onLabelChange(tempLabel.trim());
+      }
+      setEditingLabel(false);
+    };
+
+    const handleLabelCancel = () => {
+      setTempLabel(label);
+      setEditingLabel(false);
+    };
+
+    const handleLabelKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        handleLabelSubmit();
+      } else if (e.key === 'Escape') {
+        handleLabelCancel();
+      }
+    };
+
+    // Handle actions editing
+    const handleActionsDoubleClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (onActionsChange) {
+        setEditingActions(true);
+      }
+    };
+
+    const handleActionsSubmit = () => {
+      if (onActionsChange) {
+        const newEntryActions = tempEntryActions
+          .split('\n')
+          .filter((action) => action.trim());
+        const newExitActions = tempExitActions
+          .split('\n')
+          .filter((action) => action.trim());
+        onActionsChange(newEntryActions, newExitActions);
+      }
+      setEditingActions(false);
+    };
+
+    const handleActionsCancel = () => {
+      setTempEntryActions(entryActions.join('\n'));
+      setTempExitActions(exitActions.join('\n'));
+      setEditingActions(false);
+    };
+
+    // Update temp values when data changes from external sources
+    React.useEffect(() => {
+      setTempLabel(label);
+    }, [label]);
+
+    React.useEffect(() => {
+      setTempEntryActions(entryActions.join('\n'));
+      setTempExitActions(exitActions.join('\n'));
+    }, [entryActions, exitActions]);
 
     // Generate base CSS classes
     const getBaseClasses = () => {
@@ -67,14 +157,14 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
 
     // Convert visual styles to CSS properties
     const inlineStyles = visualStyles ? visualStylesToCSS(visualStyles) : {};
-    
+
     // Get additional classes for shadows, transitions, etc.
-    const additionalClasses = visualStyles 
+    const additionalClasses = visualStyles
       ? getAdditionalClasses(visualStyles, isActive, selected)
       : 'shadow-lg hover:shadow-xl transition-all duration-300';
 
     const nodeClasses = `${getBaseClasses()} ${additionalClasses}`;
-    
+
     // Apply border style
     if (visualStyles?.borderStyle) {
       inlineStyles.borderStyle = visualStyles.borderStyle;
@@ -131,11 +221,28 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         <div className='p-4'>
           {/* State header with icon and name */}
           <div className='flex items-center justify-between mb-3'>
-            <div className='flex items-center space-x-2'>
+            <div className='flex items-center space-x-2 flex-1'>
               {getStateIcon()}
-              <span className='font-semibold text-gray-900 text-base'>
-                {label}
-              </span>
+              {editingLabel ? (
+                <input
+                  type='text'
+                  value={tempLabel}
+                  onChange={(e) => setTempLabel(e.target.value)}
+                  onBlur={handleLabelSubmit}
+                  onKeyDown={handleLabelKeyDown}
+                  className='font-semibold text-gray-900 text-base bg-white border border-blue-300 rounded px-2 py-1 min-w-0 flex-1'
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span
+                  className='font-semibold text-gray-900 text-base cursor-pointer hover:bg-blue-50 px-2 py-1 rounded'
+                  onDoubleClick={handleLabelDoubleClick}
+                  title='Double-click to edit state name'
+                >
+                  {label}
+                </span>
+              )}
             </div>
             {isInitial && (
               <div className='bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium'>
@@ -145,20 +252,80 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
           </div>
 
           {/* Actions indicator */}
-          {hasActions && (
+          {(hasActions || editingActions) && (
             <div className='mt-3 pt-3 border-t border-gray-200/50'>
-              <div className='flex flex-wrap gap-1'>
-                {hasEntryActions && (
-                  <span className='bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-md font-medium'>
-                    Entry ({entryActions.length})
-                  </span>
-                )}
-                {hasExitActions && (
-                  <span className='bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-md font-medium'>
-                    Exit ({exitActions.length})
-                  </span>
-                )}
-              </div>
+              {editingActions ? (
+                <div className='space-y-3'>
+                  <div>
+                    <label className='block text-xs font-medium text-gray-700 mb-1'>
+                      Entry Actions (one per line):
+                    </label>
+                    <textarea
+                      value={tempEntryActions}
+                      onChange={(e) => setTempEntryActions(e.target.value)}
+                      className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
+                      placeholder='log("Entering state")'
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div>
+                    <label className='block text-xs font-medium text-gray-700 mb-1'>
+                      Exit Actions (one per line):
+                    </label>
+                    <textarea
+                      value={tempExitActions}
+                      onChange={(e) => setTempExitActions(e.target.value)}
+                      className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
+                      placeholder='log("Exiting state")'
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className='flex space-x-2'>
+                    <button
+                      onClick={handleActionsSubmit}
+                      className='text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600'
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleActionsCancel}
+                      className='text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600'
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className='flex flex-wrap gap-1'>
+                  {/* {hasEntryActions && (
+                    <span
+                      className='bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-blue-200'
+                      onDoubleClick={handleActionsDoubleClick}
+                      title='Double-click to edit actions'
+                    >
+                      Entry ({entryActions.length})
+                    </span>
+                  )}
+                  {hasExitActions && (
+                    <span
+                      className='bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-orange-200'
+                      onDoubleClick={handleActionsDoubleClick}
+                      title='Double-click to edit actions'
+                    >
+                      Exit ({exitActions.length})
+                    </span>
+                  )} */}
+                  {onActionsChange && !hasActions && (
+                    <span
+                      className='bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-gray-200'
+                      onDoubleClick={handleActionsDoubleClick}
+                      title='Double-click to add actions'
+                    >
+                      + Add Actions
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
