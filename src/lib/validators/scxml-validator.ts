@@ -1501,6 +1501,18 @@ export class SCXMLValidator {
 
       const attributeName = key.startsWith('@_') ? key.substring(2) : key;
 
+      // Skip visual namespace attributes - they are valid metadata
+      if (attributeName.includes(':') && attributeName.match(/^[\w-]+:[\w-]+$/)) {
+        const [prefix, localName] = attributeName.split(':');
+        // Allow any namespaced attributes (including visual:*)
+        return;
+      }
+
+      // Skip xmlns declarations for namespaces
+      if (attributeName.startsWith('xmlns:')) {
+        return;
+      }
+
       if (!validAttributes.has(attributeName)) {
         const suggestion = this.findSimilarAttribute(
           attributeName,

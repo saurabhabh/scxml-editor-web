@@ -1,11 +1,7 @@
 'use client';
 
 import React from 'react';
-import { 
-  BaseEdge, 
-  getStraightPath, 
-  type EdgeProps
-} from 'reactflow';
+import { BaseEdge, getBezierPath, type EdgeProps } from 'reactflow';
 
 export interface SCXMLTransitionEdgeData {
   event?: string;
@@ -13,21 +9,28 @@ export interface SCXMLTransitionEdgeData {
   actions?: string[];
 }
 
-export const SCXMLTransitionEdge: React.FC<EdgeProps<SCXMLTransitionEdgeData>> = ({
+export const SCXMLTransitionEdge: React.FC<
+  EdgeProps<SCXMLTransitionEdgeData>
+> = ({
   id,
   sourceX,
   sourceY,
   targetX,
   targetY,
+  sourcePosition,
+  targetPosition,
   data,
   selected,
   markerEnd,
 }) => {
-  const [edgePath, labelX, labelY] = getStraightPath({
+  // Use getBezierPath for smooth curves instead of getStraightPath
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
+    sourcePosition,
     targetX,
     targetY,
+    targetPosition,
   });
 
   // Safely extract data properties
@@ -59,7 +62,8 @@ export const SCXMLTransitionEdge: React.FC<EdgeProps<SCXMLTransitionEdgeData>> =
     const parts: string[] = [];
     if (event) parts.push(`${event}`);
     if (condition) parts.push(`[${condition}]`);
-    if (actions.length > 0) parts.push(`/ ${actions.length} action${actions.length > 1 ? 's' : ''}`);
+    if (actions.length > 0)
+      parts.push(`/ ${actions.length} action${actions.length > 1 ? 's' : ''}`);
     return parts.join(' ');
   };
 
@@ -73,26 +77,35 @@ export const SCXMLTransitionEdge: React.FC<EdgeProps<SCXMLTransitionEdgeData>> =
         style={{
           stroke: edgeColor,
           strokeWidth,
-          strokeDasharray: getStrokeStyle() === 'dashed' ? '8,4' : 
-                          getStrokeStyle() === 'dotted' ? '2,2' : 'none',
+          strokeDasharray:
+            getStrokeStyle() === 'dashed'
+              ? '8,4'
+              : getStrokeStyle() === 'dotted'
+              ? '2,2'
+              : 'none',
         }}
       />
       {labelContent && (
         <foreignObject
-          width={Math.max(labelContent.length * 8, 60)}
-          height={24}
-          x={labelX - (Math.max(labelContent.length * 8, 60) / 2)}
-          y={labelY - 12}
+          width={Math.max(labelContent.length * 7, 50)}
+          height={22}
+          x={labelX - Math.max(labelContent.length * 7, 50) / 2}
+          y={labelY - 11}
         >
           <div
             className={`
-              px-2 py-1 rounded text-xs font-medium shadow-sm border text-center
-              ${selected 
-                ? 'bg-blue-100 border-blue-300 text-blue-800' 
-                : 'bg-white border-gray-300 text-gray-700'
+              px-2 py-1 rounded-full text-xs font-medium shadow-sm border text-center
+              ${
+                selected
+                  ? 'bg-blue-500 border-blue-600 text-white'
+                  : 'bg-gray-600 border-gray-700 text-white'
               }
             `}
-            style={{ fontSize: '11px' }}
+            style={{
+              fontSize: '10px',
+              lineHeight: '1',
+              whiteSpace: 'nowrap',
+            }}
           >
             {labelContent}
           </div>

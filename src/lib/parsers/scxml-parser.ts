@@ -1,9 +1,12 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { SCXMLDocument, SCXMLElement } from '@/types/scxml';
 import type { ValidationError, ParseResult } from '@/types/common';
+import { VisualMetadataManager } from '@/lib/metadata';
+import type { ElementVisualMetadata } from '@/types/visual-metadata';
 
 export class SCXMLParser {
   private parser: XMLParser;
+  private visualMetadataManager: VisualMetadataManager;
 
   constructor() {
     this.parser = new XMLParser({
@@ -13,7 +16,9 @@ export class SCXMLParser {
       parseAttributeValue: false,
       trimValues: true,
       parseTagValue: true,
+      allowBooleanAttributes: false,
     });
+    this.visualMetadataManager = new VisualMetadataManager();
   }
 
   parse(xmlContent: string): ParseResult<SCXMLDocument> {
@@ -21,6 +26,9 @@ export class SCXMLParser {
     let parsed: Record<string, unknown> | null = null;
     let hasXMLError = false;
 
+    // Check for visual namespace declaration before parsing
+    const hasVisualNamespace = this.checkForVisualNamespace(xmlContent);
+    
     // First perform comprehensive XML syntax validation
     const xmlSyntaxErrors = this.validateXMLSyntax(xmlContent);
     errors.push(...xmlSyntaxErrors);
@@ -76,6 +84,20 @@ export class SCXMLParser {
         scxml: parsed.scxml as SCXMLElement,
       };
 
+      // Extract visual metadata if namespace is present
+      if (hasVisualNamespace) {
+        try {
+          const visualMetadata = this.visualMetadataManager.extractAllVisualMetadata(scxmlDoc);
+          console.log(`Extracted visual metadata for ${visualMetadata.size} elements`);
+        } catch (error) {
+          console.warn('Failed to extract visual metadata:', error);
+          errors.push({
+            message: 'Failed to parse visual metadata: ' + (error instanceof Error ? error.message : 'Unknown error'),
+            severity: 'warning',
+          });
+        }
+      }
+
       // Perform SCXML-specific validation even if there were XML errors
       this.validateSCXML(scxmlDoc.scxml, errors);
     }
@@ -85,6 +107,34 @@ export class SCXMLParser {
       data: scxmlDoc,
       errors,
     };
+  }
+
+  /**
+   * Get visual metadata manager instance
+   */
+  getVisualMetadataManager(): VisualMetadataManager {
+    return this.visualMetadataManager;
+  }
+
+  /**
+   * Get visual metadata for a specific element
+   */
+  getVisualMetadata(elementId: string): ElementVisualMetadata | undefined {
+    return this.visualMetadataManager.getVisualMetadata(elementId);
+  }
+
+  /**
+   * Update visual metadata for an element
+   */
+  updateVisualMetadata(elementId: string, metadata: Partial<ElementVisualMetadata>): void {
+    this.visualMetadataManager.updateVisualMetadata(elementId, metadata);
+  }
+
+  /**
+   * Get all visual metadata
+   */
+  getAllVisualMetadata(): Map<string, ElementVisualMetadata> {
+    return this.visualMetadataManager.getAllMetadata();
   }
 
   private validateXMLSyntax(xmlContent: string): ValidationError[] {
@@ -262,10 +312,19 @@ export class SCXMLParser {
     return errors;
   }
 
+  /**
+   * Check if XML contains visual namespace declaration
+   */
+  private checkForVisualNamespace(xmlContent: string): boolean {
+    // Check for visual namespace declaration
+    const visualNamespacePattern = /xmlns:([\w-]+)\s*=\s*["']http:\/\/visual-scxml-editor\/metadata["']/;
+    return visualNamespacePattern.test(xmlContent);
+  }
+
   private validateAttributes(tagContent: string, line: number, column: number): ValidationError[] {
     const errors: ValidationError[] = [];
     
-    // Find all attribute-like patterns
+    // Find all attribute-like patterns (including namespaced attributes)
     const attrRegex = /([a-zA-Z][a-zA-Z0-9:\-_]*)\s*=\s*("[^"]*"|'[^']*'|[^>\s]*)/g;
     const quotedAttrRegex = /([a-zA-Z][a-zA-Z0-9:\-_]*)\s*=\s*("[^"]*"|'[^']*')/g;
     
@@ -274,6 +333,11 @@ export class SCXMLParser {
     while ((match = attrRegex.exec(tagContent)) !== null) {
       const attrName = match[1];
       const attrValue = match[2];
+      
+      // Skip validation for visual namespace attributes (they might have special formats)
+      if (attrName.startsWith('visual:') || attrName.startsWith('xmlns:')) {
+        continue;
+      }
       
       if (!attrValue.startsWith('"') && !attrValue.startsWith("'")) {
         errors.push({
@@ -290,15 +354,31 @@ export class SCXMLParser {
     attrRegex.lastIndex = 0;
     while ((match = quotedAttrRegex.exec(tagContent)) !== null) {
       const attrName = match[1].toLowerCase();
-      if (foundAttrs.has(attrName)) {
-        errors.push({
-          message: `Duplicate attribute '${match[1]}'`,
-          line: line,
-          column: column + match.index,
-          severity: 'error'
-        });
+      
+      // Handle namespace attributes specially
+      if (attrName.includes(':')) {
+        // For namespaced attributes, include the full name in duplicate check
+        if (foundAttrs.has(attrName)) {
+          errors.push({
+            message: `Duplicate attribute '${match[1]}'`,
+            line: line,
+            column: column + match.index,
+            severity: 'error'
+          });
+        }
+        foundAttrs.add(attrName);
+      } else {
+        // For non-namespaced attributes, use the original logic
+        if (foundAttrs.has(attrName)) {
+          errors.push({
+            message: `Duplicate attribute '${match[1]}'`,
+            line: line,
+            column: column + match.index,
+            severity: 'error'
+          });
+        }
+        foundAttrs.add(attrName);
       }
-      foundAttrs.add(attrName);
     }
     
     return errors;
@@ -317,10 +397,21 @@ export class SCXMLParser {
     }
   }
 
-  serialize(scxmlDoc: SCXMLDocument): string {
-    // This is a simplified serialization
-    // In a real implementation, you might want to use a proper XML builder
-    return this.serializeElement('scxml', scxmlDoc.scxml);
+  serialize(scxmlDoc: SCXMLDocument, includeVisualMetadata: boolean = true): string {
+    if (includeVisualMetadata) {
+      // Use visual metadata manager for enhanced serialization
+      return this.visualMetadataManager.serializeWithVisualMetadata(scxmlDoc, {
+        includeVisualMetadata: true,
+        formatOutput: true,
+        validate: true,
+      });
+    } else {
+      // Return clean SCXML without visual metadata
+      return this.visualMetadataManager.serializeWithVisualMetadata(scxmlDoc, {
+        includeVisualMetadata: false,
+        formatOutput: true,
+      });
+    }
   }
 
   private serializeElement(tagName: string, element: Record<string, unknown> | SCXMLElement): string {

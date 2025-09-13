@@ -2,44 +2,43 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { XMLEditor, type XMLEditorRef } from '@/components/editor';
-import { FileUpload, FileDownload } from '@/components/file-operations';
+import {
+  FileUpload,
+  FileDownload,
+  VisualMetadataExport,
+} from '@/components/file-operations';
 import { TwoTabLayout } from '@/components/layout';
 import { VisualDiagram } from '@/components/diagram';
 import { Upload } from 'lucide-react';
 import { ErrorBoundary, ValidationPanel } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
 import { SCXMLToXStateConverter } from '@/lib/converters';
+import { hasVisualMetadata } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
 
-const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="red">
-  <!-- Red Light (5s) -->
-  <state id="red">
+const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="red">
+  <state id="red" visual:x="100" visual:y="50" visual:fill="#FF0000" visual:stroke="#f44336">
     <onentry>
-      <log label="Traffic Light" expr="'Red'" />
-      <send event="next" delay="5s"/>
+      <log label="Traffic Light" expr="Red"></log>
+      <send event="next" delay="5s"></send>
     </onentry>
-    <transition event="next" target="green"/>
+    <transition event="next" target="green" ></transition>
   </state>
-
-  <!-- Green Light (3s) -->
-  <state id="green">
+  <state id="green" visual:x="400" visual:y="300" visual:fill="#e8f5e8" visual:stroke="#4caf50">
     <onentry>
-      <log label="Traffic Light" expr="'Green'" />
-      <send event="next" delay="3s"/>
+      <log label="Traffic Light" expr="Green"></log>
+      <send event="next" delay="3s"></send>
     </onentry>
-    <transition event="next" target="yellow"/>
+    <transition event="next" target="yellow" ></transition>
   </state>
-
-  <!-- Yellow Light (2s) -->
-  <state id="yellow">
+  <state id="yellow" visual:x="700" visual:y="50" visual:fill="#fffde7" visual:stroke="#ff9800">
     <onentry>
-      <log label="Traffic Light" expr="'Yellow'" />
-      <send event="next" delay="2s"/>
+      <log label="Traffic Light" expr="Yellow"></log>
+      <send event="next" delay="2s"></send>
     </onentry>
-    <transition event="next" target="red"/>
+    <transition event="next" target="red" visual:waypoints="150,390 200,390 200,50 150,90" ></transition>
   </state>
-
 </scxml>
 `;
 
@@ -116,6 +115,15 @@ export default function Home() {
   const handleContentChange = useCallback(
     (newContent: string) => {
       setContent(newContent);
+    },
+    [setContent]
+  );
+
+  const handleSCXMLChangeFromDiagram = useCallback(
+    (newContent: string) => {
+      // Update content from visual diagram changes
+      setContent(newContent);
+      console.log('SCXML updated from diagram changes');
     },
     [setContent]
   );
@@ -246,13 +254,12 @@ export default function Home() {
       <VisualDiagram
         scxmlContent={content}
         onNodeChange={(nodes) => {
-          // TODO: Implement visual metadata sync
           console.log('Nodes changed:', nodes);
         }}
         onEdgeChange={(edges) => {
-          // TODO: Implement visual metadata sync
           console.log('Edges changed:', edges);
         }}
+        onSCXMLChange={handleSCXMLChangeFromDiagram}
       />
     </div>
   );
@@ -292,7 +299,14 @@ export default function Home() {
             } warnings`}
       </button>
 
-      <FileDownload content={content} filename={getDownloadFilename()} />
+      <VisualMetadataExport
+        scxmlContent={content}
+        filename={getDownloadFilename()}
+        hasVisualMetadata={hasVisualMetadata(content)}
+        onExportComplete={(exportType) => {
+          console.log(`Exported SCXML as: ${exportType}`);
+        }}
+      />
     </>
   );
 

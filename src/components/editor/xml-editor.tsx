@@ -226,6 +226,12 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
       monaco: typeof import('monaco-editor')
     ) => {
       try {
+        // Setup SCXML language support with visual namespace features
+        const { setupSCXMLLanguageSupport } = await import(
+          '@/lib/monaco/scxml-language'
+        );
+        setupSCXMLLanguageSupport(monaco);
+        
         // Import enhanced completion provider
         const { createEnhancedSCXMLCompletionProvider } = await import(
           '@/lib/monaco/enhanced-scxml-completion'

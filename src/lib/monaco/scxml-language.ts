@@ -1,4 +1,5 @@
 import type * as monaco from 'monaco-editor';
+import { registerVisualNamespaceFeatures } from './visual-namespace-completion';
 
 export interface SCXMLCompletionItem {
   label: string;
@@ -280,9 +281,9 @@ export const scxmlElements: SCXMLCompletionItem[] = [
   },
 ];
 
-// SCXML attribute suggestions
+// SCXML attribute suggestions (now includes visual namespace)
 export const scxmlAttributes: Record<string, string[]> = {
-  scxml: ['xmlns', 'version', 'initial', 'name', 'datamodel', 'binding'],
+  scxml: ['xmlns', 'xmlns:visual', 'version', 'initial', 'name', 'datamodel', 'binding'],
   state: ['id', 'initial'],
   parallel: ['id'],
   final: ['id'],
@@ -317,11 +318,11 @@ export const scxmlHoverInfo: Record<
 > = {
   scxml: {
     description:
-      'The root element of an SCXML document. Must contain the SCXML namespace.',
+      'The root element of an SCXML document. Must contain the SCXML namespace. Can include visual metadata namespace for layout information.',
     syntax:
-      '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="initialState">',
+      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="initialState">',
     example:
-      '<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">\n  <state id="idle">\n    <transition event="start" target="active" />\n  </state>\n  <state id="active" />\n</scxml>',
+      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="idle">\n  <state id="idle" visual:x="100" visual:y="50">\n    <transition event="start" target="active" />\n  </state>\n  <state id="active" visual:x="300" visual:y="50" />\n</scxml>',
   },
   state: {
     description:
@@ -433,6 +434,9 @@ function getAttributeSuggestions(
 export function setupSCXMLLanguageSupport(
   monaco: typeof import('monaco-editor')
 ) {
+  // Register visual namespace features first
+  registerVisualNamespaceFeatures(monaco, 'xml');
+  
   // Register fallback completion provider for SCXML elements
   // This works alongside monacopilot to provide immediate suggestions
   monaco.languages.registerCompletionItemProvider('xml', {
