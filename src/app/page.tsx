@@ -239,16 +239,14 @@ export default function Home() {
         />
       </div>
 
-      {isValidationPanelVisible && (
-        <div className='w-80'>
-          <ValidationPanel
-            errors={errors}
-            isVisible={isValidationPanelVisible}
-            onClose={() => setValidationPanelVisible(false)}
-            onErrorClick={handleErrorClick}
-          />
-        </div>
-      )}
+      <div className='w-80'>
+        <ValidationPanel
+          errors={errors}
+          isVisible={isValidationPanelVisible}
+          onClose={() => setValidationPanelVisible(false)}
+          onErrorClick={handleErrorClick}
+        />
+      </div>
     </div>
   );
 
@@ -279,7 +277,7 @@ export default function Home() {
 
       <button
         onClick={handleNewFileUpload}
-        className='flex items-center space-x-2 text-sm px-3 py-2 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
+        className='cursor-pointer flex items-center space-x-2 text-sm px-3 py-2 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
       >
         <Upload className='h-4 w-4' />
         <span>Load New File</span>
@@ -287,7 +285,7 @@ export default function Home() {
 
       <button
         onClick={() => setValidationPanelVisible(!isValidationPanelVisible)}
-        className={`text-sm px-3 py-2 rounded-md transition-colors ${
+        className={`cursor-pointer text-sm px-3 py-2 rounded-md transition-colors ${
           hasErrors
             ? 'bg-red-100 text-red-800 hover:bg-red-200'
             : hasWarnings

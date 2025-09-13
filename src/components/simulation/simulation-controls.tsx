@@ -167,7 +167,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
   return (
     <div className='p-4 bg-white border-b'>
-      <div className='flex items-center justify-between'>
+      {/* <div className='flex items-center justify-between'>
         <div className='flex items-center space-x-3'>
           <h3 className='text-sm font-medium text-gray-700'>
             Simulation Controls
@@ -182,7 +182,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           )}
         </div>
 
-        {/* <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2">
           {status === 'stopped' && (
             <button
               onClick={handleStart}
@@ -241,8 +241,8 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
             <StepForward className="h-3 w-3" />
             <span>Step</span>
           </button>
-        </div> */}
-      </div>
+        </div>
+      </div> */}
 
       {/* Event buttons - show events that can be sent */}
       {actor && status === 'running' && (
