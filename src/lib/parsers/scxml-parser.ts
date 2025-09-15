@@ -334,8 +334,8 @@ export class SCXMLParser {
       const attrName = match[1];
       const attrValue = match[2];
       
-      // Skip validation for visual namespace attributes (they might have special formats)
-      if (attrName.startsWith('visual:') || attrName.startsWith('xmlns:')) {
+      // Skip validation for viz namespace attributes (they might have special formats)
+      if (attrName.startsWith('viz:') || attrName.startsWith('xmlns:')) {
         continue;
       }
       

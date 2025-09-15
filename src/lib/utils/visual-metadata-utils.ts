@@ -20,7 +20,7 @@ export function hasVisualMetadata(scxmlContent: string): boolean {
   
   // Extract the namespace prefix
   const match = scxmlContent.match(namespacePattern);
-  const prefix = match ? match[1] : 'visual';
+  const prefix = match ? match[1] : 'viz';
   
   // Check for any visual attributes with that prefix
   const attributePattern = new RegExp(`${prefix}:([\\w-]+)\\s*=`, 'g');
@@ -67,40 +67,28 @@ export function extractVisualAttributes(scxmlContent: string): Map<string, strin
  */
 export function generateSampleWithVisualMetadata(): string {
   return `<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:visual="http://visual-scxml-editor/metadata"
-       version="1.0" 
+       xmlns:viz="http://visual-scxml-editor/metadata"
+       version="1.0"
        initial="idle">
 
   <state id="idle"
-         visual:x="100"
-         visual:y="50"
-         visual:width="120"
-         visual:height="60"
-         visual:fill="#e1f5fe"
-         visual:stroke="#0277bd">
+         viz:xywh="100 50 120 60"
+         viz:rgb="#e1f5fe">
     <onentry>
       <log label="State" expr="'Entering idle state'" />
     </onentry>
-    <transition event="start" 
-                target="active"
-                visual:waypoints="200,80 250,120"
-                visual:label-offset="10,5" />
+    <transition event="start"
+                target="active" />
   </state>
 
   <state id="active"
-         visual:x="300"
-         visual:y="150"
-         visual:width="120" 
-         visual:height="60"
-         visual:fill="#e8f5e8"
-         visual:stroke="#2e7d32"
-         visual:action-namespaces="customActions">
+         viz:xywh="300 150 120 60"
+         viz:rgb="#e8f5e8">
     <onentry>
       <log label="State" expr="'Entering active state'" />
     </onentry>
-    <transition event="stop" 
-                target="idle"
-                visual:curve-type="smooth" />
+    <transition event="stop"
+                target="idle" />
   </state>
 
 </scxml>`;
@@ -184,7 +172,7 @@ export function removeVisualMetadataFromXML(scxmlContent: string): string {
   let cleaned = scxmlContent;
   
   // First, get the visual namespace prefix if it exists
-  const prefix = getVisualNamespacePrefix(scxmlContent) || 'visual';
+  const prefix = getVisualNamespacePrefix(scxmlContent) || 'viz';
   
   // Remove visual namespace declaration
   const namespaceDeclarationPattern = new RegExp(

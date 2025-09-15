@@ -202,6 +202,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           nodeUpdate.data = {
             ...nodeUpdate.data,
             visualStyles,
+            // Add dimensions from visual metadata
+            width: visualMetadata?.layout?.width,
+            height: visualMetadata?.layout?.height,
             // Add editing callbacks
             onLabelChange: (newLabel: string) =>
               handleNodeLabelChange(node.id, newLabel),
@@ -419,11 +422,14 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
   const handleNodePositionChange = React.useCallback(
     (nodeId: string, x: number, y: number) => {
-      console.log('=== handleNodePositionChange called ===');
-      console.log('nodeId:', nodeId, 'x:', x, 'y:', y);
-      console.log('parserRef.current:', !!parserRef.current);
-      console.log('metadataManagerRef.current:', !!metadataManagerRef.current);
-      console.log('onSCXMLChange:', !!onSCXMLChange);
+      console.log('🎯 === handleNodePositionChange called ===');
+      console.log('🎯 nodeId:', nodeId, 'x:', x, 'y:', y);
+      console.log('🎯 parserRef.current:', !!parserRef.current);
+      console.log(
+        '🎯 metadataManagerRef.current:',
+        !!metadataManagerRef.current
+      );
+      console.log('🎯 onSCXMLChange:', !!onSCXMLChange);
 
       if (!parserRef.current || !metadataManagerRef.current || !onSCXMLChange) {
         console.log('Early return: missing required refs');
@@ -431,15 +437,33 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       }
 
       try {
-        console.log('Updating metadata manager...');
+        console.log('🎯 Updating metadata manager...');
+
+        // Get existing metadata to preserve width and height
+        const existingMetadata =
+          metadataManagerRef.current.getVisualMetadata(nodeId);
+        console.log('🎯 Existing metadata:', existingMetadata);
+        const existingWidth = existingMetadata?.layout?.width || 120; // Default width
+        const existingHeight = existingMetadata?.layout?.height || 60; // Default height
+
+        console.log('🎯 About to update with:', {
+          nodeId,
+          x,
+          y,
+          width: existingWidth,
+          height: existingHeight,
+        });
+
         // Update the metadata manager's internal store
         metadataManagerRef.current.updateVisualMetadata(nodeId, {
           layout: {
             x,
             y,
+            width: existingWidth,
+            height: existingHeight,
           },
         });
-        console.log('Metadata manager updated');
+        console.log('🎯 Metadata manager updated');
 
         // Get the current metadata to verify it was stored
         const metadata = metadataManagerRef.current.getVisualMetadata(nodeId);
@@ -459,17 +483,35 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
         // Get the existing parsed data from the ref
         if (scxmlDocRef.current) {
-          console.log('Serializing with visual metadata...');
+          console.log('🎯 Serializing with visual metadata...');
           const updatedSCXML = parserRef.current.serialize(
             scxmlDocRef.current,
             true
           );
-          console.log('Serialized SCXML length:', updatedSCXML.length);
-          console.log('Updated SCXML preview:', updatedSCXML.substring(0, 500));
+          console.log('🎯 Serialized SCXML length:', updatedSCXML.length);
+          console.log(
+            '🎯 Updated SCXML preview:',
+            updatedSCXML.substring(0, 800)
+          );
 
-          console.log('Calling onSCXMLChange...');
+          // Check if the viz:xywh attribute is in the serialized XML
+          const hasVizXywh = updatedSCXML.includes('viz:xywh');
+          console.log('🎯 Serialized XML contains viz:xywh:', hasVizXywh);
+
+          if (hasVizXywh) {
+            const xywh = updatedSCXML.match(/viz:xywh="[^"]*"/g);
+            console.log('🎯 Found viz:xywh attributes:', xywh);
+          }
+
+          console.log('🎯 Calling onSCXMLChange...');
           onSCXMLChange(updatedSCXML);
-          console.log('onSCXMLChange called successfully');
+          console.log('🎯 onSCXMLChange called successfully');
+
+          // Force edge update after node position change to fix connection points
+          console.log('🎯 Forcing edge update...');
+          setTimeout(() => {
+            setEdges((edges) => [...edges]);
+          }, 10); // Small delay to ensure node update is complete
 
           console.log(
             '✅ Synced position change to SCXML via metadata manager:',
@@ -488,7 +530,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         console.error('Error details:', error);
       }
     },
-    [scxmlContent, onSCXMLChange]
+    [scxmlContent, onSCXMLChange, setEdges]
   );
 
   // Sync visual metadata changes back to SCXML
@@ -653,6 +695,18 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
             // Update SCXML with new position immediately
             console.log('Calling handleNodePositionChange...');
+            console.log('POSITION UPDATE:', {
+              nodeId: change.id,
+              oldPosition: nodes.find((n) => n.id === change.id)?.position,
+              newPosition: updatedNode.position,
+              deltaX:
+                updatedNode.position.x -
+                (nodes.find((n) => n.id === change.id)?.position.x || 0),
+              deltaY:
+                updatedNode.position.y -
+                (nodes.find((n) => n.id === change.id)?.position.y || 0),
+            });
+
             handleNodePositionChange(
               change.id,
               updatedNode.position.x,
@@ -702,7 +756,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          fitView
+          fitView={true}
           fitViewOptions={{
             padding: 0.3,
             includeHiddenNodes: false,

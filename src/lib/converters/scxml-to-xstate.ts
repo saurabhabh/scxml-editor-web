@@ -18,9 +18,7 @@ export interface VisualMetadata {
   y?: number;
   width?: number;
   height?: number;
-  style?: string;
-  waypoints?: string;
-  labelOffset?: string;
+  fill?: string;
 }
 
 /**
@@ -612,22 +610,25 @@ export class SCXMLToXStateConverter {
   private extractVisualMetadata(element: any): VisualMetadata {
     const metadata: VisualMetadata = {};
 
-    // Extract visual metadata from the visual namespace
-    const visualX = this.getAttribute(element, 'visual:x');
-    const visualY = this.getAttribute(element, 'visual:y');
-    const visualWidth = this.getAttribute(element, 'visual:width');
-    const visualHeight = this.getAttribute(element, 'visual:height');
-    const visualStyle = this.getAttribute(element, 'visual:style');
-    const visualWaypoints = this.getAttribute(element, 'visual:waypoints');
-    const visualLabelOffset = this.getAttribute(element, 'visual:label-offset');
+    // Extract visual metadata from the viz namespace
+    const vizXywh = this.getAttribute(element, 'viz:xywh');
+    const vizRgb = this.getAttribute(element, 'viz:rgb');
 
-    if (visualX) metadata.x = parseFloat(visualX);
-    if (visualY) metadata.y = parseFloat(visualY);
-    if (visualWidth) metadata.width = parseFloat(visualWidth);
-    if (visualHeight) metadata.height = parseFloat(visualHeight);
-    if (visualStyle) metadata.style = visualStyle;
-    if (visualWaypoints) metadata.waypoints = visualWaypoints;
-    if (visualLabelOffset) metadata.labelOffset = visualLabelOffset;
+    // Parse viz:xywh format: "x y width height"
+    if (vizXywh) {
+      const parts = vizXywh.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        metadata.x = parseFloat(parts[0]);
+        metadata.y = parseFloat(parts[1]);
+        metadata.width = parseFloat(parts[2]);
+        metadata.height = parseFloat(parts[3]);
+      }
+    }
+
+    // Parse viz:rgb for fill color - store as style for now
+    if (vizRgb) {
+      (metadata as any).fill = '#' + vizRgb;
+    }
 
     return metadata;
   }

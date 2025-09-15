@@ -28,6 +28,9 @@ export interface SCXMLStateNodeData {
   onEntryActions?: string[];
   onExitActions?: string[];
   visualStyles?: VisualStyles;
+  // Dimensions from viz:xywh
+  width?: number;
+  height?: number;
   // Editing capabilities
   onLabelChange?: (newLabel: string) => void;
   onStateTypeChange?: (
@@ -137,26 +140,45 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     const getBaseClasses = () => {
       let baseClasses = 'overflow-hidden isolate';
 
-      // Adjust size based on state type
-      switch (stateType) {
-        case 'compound':
-          baseClasses += ' min-w-[180px] min-h-[100px]'; // Larger for compound states
-          break;
-        case 'parallel':
-          baseClasses += ' min-w-[160px] min-h-[90px]'; // Larger for parallel states
-          break;
-        case 'final':
-          baseClasses += ' min-w-[120px] min-h-[60px]'; // Smaller for final states
-          break;
-        default:
-          baseClasses += ' min-w-[140px] min-h-[80px]';
+      // Only add minimum sizes if no explicit dimensions are provided via data
+      if (!data.width && !data.height) {
+        // Adjust size based on state type
+        switch (stateType) {
+          case 'compound':
+            baseClasses += ' min-w-[180px] min-h-[100px]'; // Larger for compound states
+            break;
+          case 'parallel':
+            baseClasses += ' min-w-[160px] min-h-[90px]'; // Larger for parallel states
+            break;
+          case 'final':
+            baseClasses += ' min-w-[120px] min-h-[60px]'; // Smaller for final states
+            break;
+          default:
+            baseClasses += ' min-w-[140px] min-h-[80px]';
+        }
       }
 
       return baseClasses;
     };
 
-    // Convert visual styles to CSS properties
-    const inlineStyles = visualStyles ? visualStylesToCSS(visualStyles) : {};
+    // Convert visual styles to CSS properties and apply dimensions from data
+    const inlineStyles = {
+      ...(visualStyles ? visualStylesToCSS(visualStyles) : {}),
+      // Apply width and height from node data (set by viz:xywh)
+      ...(data.width && { width: data.width }),
+      ...(data.height && { height: data.height }),
+    };
+
+    // Debug logging for height changes
+    React.useEffect(() => {
+      if (data.height) {
+        console.log(`Node ${label} height change:`, {
+          height: data.height,
+          width: data.width,
+          nodeId: data.label
+        });
+      }
+    }, [data.height, data.width, label, data.label]);
 
     // Get additional classes for shadows, transitions, etc.
     const additionalClasses = visualStyles
@@ -195,30 +217,65 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     };
 
     return (
-      <div className={nodeClasses} style={inlineStyles}>
-        {/* Connection handles */}
+      <div
+        className={nodeClasses}
+        style={{
+          ...inlineStyles,
+          position: 'relative',
+          zIndex: 1,
+          overflow: 'visible',
+          // Ensure fixed dimensions when specified
+          ...(data.width && { minWidth: data.width, maxWidth: data.width }),
+          ...(data.height && { minHeight: data.height, maxHeight: data.height }),
+        }}
+      >
+        {/* Dynamic connection handles based on actual node dimensions */}
         <Handle
           type='target'
           position={Position.Top}
+          style={{
+            left: '50%',
+            top: '-4px',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+          }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='source'
           position={Position.Bottom}
+          style={{
+            left: '50%',
+            bottom: '-4px',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+          }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='target'
           position={Position.Left}
+          style={{
+            left: '-4px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 10,
+          }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='source'
           position={Position.Right}
+          style={{
+            right: '-4px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 10,
+          }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
 
-        <div className='p-4'>
+        <div className={`p-4 ${data.height ? 'h-full overflow-hidden' : ''}`}>
           {/* State header with icon and name */}
           <div className='flex items-center justify-between mb-3'>
             <div className='flex items-center space-x-2 flex-1'>

@@ -1,6 +1,6 @@
 /**
  * Visual Metadata Manager
- * 
+ *
  * Handles extraction, manipulation, and serialization of visual metadata
  * stored in the custom XML namespace xmlns:visual="http://visual-scxml-editor/metadata"
  */
@@ -45,7 +45,10 @@ export class VisualMetadataManager {
   /**
    * Extract visual metadata from parsed SCXML element
    */
-  extractVisualMetadata(element: any, elementId: string): ElementVisualMetadata | null {
+  extractVisualMetadata(
+    element: any,
+    elementId: string
+  ): ElementVisualMetadata | null {
     if (!element || !elementId) return null;
 
     const metadata: ElementVisualMetadata = {
@@ -66,28 +69,12 @@ export class VisualMetadataManager {
       metadata.style = style;
     }
 
-    // Extract diagram metadata
-    const diagram = this.extractDiagramMetadata(element);
-    if (diagram && Object.keys(diagram).length > 0) {
-      metadata.diagram = diagram;
-    }
-
-    // Extract action namespace metadata
-    const actions = this.extractActionNamespaceMetadata(element);
-    if (actions && Object.keys(actions).length > 0) {
-      metadata.actions = actions;
-    }
-
-    // Extract view state metadata
-    const view = this.extractViewStateMetadata(element);
-    if (view && Object.keys(view).length > 0) {
-      metadata.view = view;
-    }
+    // Note: Diagram metadata, action namespace metadata, and view state metadata
+    // extraction removed per new requirements - only viz:xywh and viz:rgb are supported
 
     // Only return metadata if we found something
-    const hasMetadata = metadata.layout || metadata.style || metadata.diagram || 
-                       metadata.actions || metadata.view;
-    
+    const hasMetadata = metadata.layout || metadata.style;
+
     if (hasMetadata) {
       this.metadataStore.set(elementId, metadata);
       return metadata;
@@ -99,9 +86,11 @@ export class VisualMetadataManager {
   /**
    * Extract all visual metadata from SCXML document
    */
-  extractAllVisualMetadata(scxmlDoc: SCXMLDocument): Map<string, ElementVisualMetadata> {
+  extractAllVisualMetadata(
+    scxmlDoc: SCXMLDocument
+  ): Map<string, ElementVisualMetadata> {
     this.metadataStore.clear();
-    
+
     // Extract from root scxml element
     const rootMetadata = this.extractVisualMetadata(scxmlDoc.scxml, 'scxml');
     if (rootMetadata) {
@@ -117,10 +106,13 @@ export class VisualMetadataManager {
   /**
    * Update visual metadata for an element
    */
-  updateVisualMetadata(elementId: string, metadata: Partial<VisualMetadata>): void {
+  updateVisualMetadata(
+    elementId: string,
+    metadata: Partial<VisualMetadata>
+  ): void {
     const existing = this.metadataStore.get(elementId);
     const previousMetadata = existing ? { ...existing } : undefined;
-    
+
     const updated: ElementVisualMetadata = {
       ...(existing || {
         elementId,
@@ -180,98 +172,37 @@ export class VisualMetadataManager {
 
     const updatedElement = { ...element };
 
-    // Apply layout metadata
+    // Apply layout metadata using new viz:xywh format
     if (metadata.layout) {
-      if (metadata.layout.x !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:x`] = metadata.layout.x.toString();
-      }
-      if (metadata.layout.y !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:y`] = metadata.layout.y.toString();
-      }
-      if (metadata.layout.width !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:width`] = metadata.layout.width.toString();
-      }
-      if (metadata.layout.height !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:height`] = metadata.layout.height.toString();
+      const { x, y, width, height } = metadata.layout;
+      if (
+        x !== undefined &&
+        y !== undefined &&
+        width !== undefined &&
+        height !== undefined
+      ) {
+        updatedElement[
+          `@_${this.namespacePrefix}:xywh`
+        ] = `${x} ${y} ${width} ${height}`;
       }
       if (metadata.layout.zIndex !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:z-index`] = metadata.layout.zIndex.toString();
+        updatedElement[`@_${this.namespacePrefix}:z-index`] =
+          metadata.layout.zIndex.toString();
       }
     }
 
-    // Apply style metadata
+    // Apply style metadata using new viz:rgb format
     if (metadata.style) {
       if (metadata.style.fill) {
-        updatedElement[`@_${this.namespacePrefix}:fill`] = metadata.style.fill;
+        updatedElement[`@_${this.namespacePrefix}:rgb`] =
+          '#' + metadata.style.fill;
       }
-      if (metadata.style.stroke) {
-        updatedElement[`@_${this.namespacePrefix}:stroke`] = metadata.style.stroke;
-      }
-      if (metadata.style.strokeWidth !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:stroke-width`] = metadata.style.strokeWidth.toString();
-      }
-      if (metadata.style.borderRadius !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:border-radius`] = metadata.style.borderRadius.toString();
-      }
-      if (metadata.style.className) {
-        updatedElement[`@_${this.namespacePrefix}:class`] = metadata.style.className;
-      }
-      if (metadata.style.style) {
-        // Convert style object to CSS string
-        const styleString = Object.entries(metadata.style.style)
-          .map(([key, value]) => `${key}:${value}`)
-          .join(';');
-        updatedElement[`@_${this.namespacePrefix}:style`] = styleString;
-      }
-      if (metadata.style.opacity !== undefined) {
-        updatedElement[`@_${this.namespacePrefix}:opacity`] = metadata.style.opacity.toString();
-      }
+      // Note: Other style properties like stroke, strokeWidth etc. are removed per requirements
+      // Only keeping fill color as viz:rgb
     }
 
-    // Apply diagram metadata
-    if (metadata.diagram) {
-      if (metadata.diagram.waypoints && metadata.diagram.waypoints.length > 0) {
-        const waypointsString = metadata.diagram.waypoints
-          .map(wp => `${wp.x},${wp.y}`)
-          .join(' ');
-        updatedElement[`@_${this.namespacePrefix}:waypoints`] = waypointsString;
-      }
-      if (metadata.diagram.labelOffset) {
-        updatedElement[`@_${this.namespacePrefix}:label-offset`] = 
-          `${metadata.diagram.labelOffset.x},${metadata.diagram.labelOffset.y}`;
-      }
-      if (metadata.diagram.curveType) {
-        updatedElement[`@_${this.namespacePrefix}:curve-type`] = metadata.diagram.curveType;
-      }
-      if (metadata.diagram.markerType) {
-        updatedElement[`@_${this.namespacePrefix}:marker-type`] = metadata.diagram.markerType;
-      }
-    }
-
-    // Apply action namespace metadata
-    if (metadata.actions) {
-      if (metadata.actions.namespaces && metadata.actions.namespaces.length > 0) {
-        updatedElement[`@_${this.namespacePrefix}:action-namespaces`] = 
-          metadata.actions.namespaces.join(',');
-      }
-      if (metadata.actions.definitions && metadata.actions.definitions.length > 0) {
-        // Serialize custom action definitions as JSON
-        const actionsJson = JSON.stringify(metadata.actions.definitions);
-        updatedElement[`@_${this.namespacePrefix}:custom-actions`] = actionsJson;
-      }
-    }
-
-    // Apply view state metadata
-    if (metadata.view) {
-      if (metadata.view.collapsed && metadata.view.collapsed.length > 0) {
-        updatedElement[`@_${this.namespacePrefix}:collapsed`] = 
-          metadata.view.collapsed.join(',');
-      }
-      if (metadata.view.selected && metadata.view.selected.length > 0) {
-        updatedElement[`@_${this.namespacePrefix}:selected`] = 
-          metadata.view.selected.join(',');
-      }
-    }
+    // Note: Diagram metadata, action namespace metadata, and view state metadata
+    // are removed per new requirements - only viz:xywh and viz:rgb are supported
 
     return updatedElement;
   }
@@ -309,7 +240,8 @@ export class VisualMetadataManager {
     const enrichedDoc = this.applyAllVisualMetadata(scxmlDoc);
 
     // Add namespace declaration to root element
-    (enrichedDoc.scxml as any)[`@_xmlns:${fullConfig.namespacePrefix}`] = fullConfig.namespaceURI;
+    (enrichedDoc.scxml as any)[`@_xmlns:${fullConfig.namespacePrefix}`] =
+      fullConfig.namespaceURI;
 
     // Serialize with XML builder
     const builder = new XMLBuilder({
@@ -341,75 +273,55 @@ export class VisualMetadataManager {
 
     // Validate layout metadata
     if (metadata.layout) {
-      if (metadata.layout.x !== undefined && (isNaN(metadata.layout.x) || !isFinite(metadata.layout.x))) {
+      if (
+        metadata.layout.x !== undefined &&
+        (isNaN(metadata.layout.x) || !isFinite(metadata.layout.x))
+      ) {
         errors.push({
           message: 'Invalid x coordinate value',
           elementId,
-          attribute: 'visual:x',
+          attribute: 'viz:xywh',
           code: 'INVALID_NUMERIC_VALUE',
         });
       }
-      if (metadata.layout.y !== undefined && (isNaN(metadata.layout.y) || !isFinite(metadata.layout.y))) {
+      if (
+        metadata.layout.y !== undefined &&
+        (isNaN(metadata.layout.y) || !isFinite(metadata.layout.y))
+      ) {
         errors.push({
           message: 'Invalid y coordinate value',
           elementId,
-          attribute: 'visual:y',
+          attribute: 'viz:xywh',
           code: 'INVALID_NUMERIC_VALUE',
         });
       }
-      if (metadata.layout.width !== undefined && (isNaN(metadata.layout.width) || metadata.layout.width <= 0)) {
+      if (
+        metadata.layout.width !== undefined &&
+        (isNaN(metadata.layout.width) || metadata.layout.width <= 0)
+      ) {
         errors.push({
           message: 'Width must be a positive number',
           elementId,
-          attribute: 'visual:width',
+          attribute: 'viz:xywh',
           code: 'INVALID_POSITIVE_VALUE',
         });
       }
-      if (metadata.layout.height !== undefined && (isNaN(metadata.layout.height) || metadata.layout.height <= 0)) {
+      if (
+        metadata.layout.height !== undefined &&
+        (isNaN(metadata.layout.height) || metadata.layout.height <= 0)
+      ) {
         errors.push({
           message: 'Height must be a positive number',
           elementId,
-          attribute: 'visual:height',
+          attribute: 'viz:xywh',
           code: 'INVALID_POSITIVE_VALUE',
         });
       }
     }
 
-    // Validate style metadata
-    if (metadata.style) {
-      if (metadata.style.opacity !== undefined && 
-          (isNaN(metadata.style.opacity) || metadata.style.opacity < 0 || metadata.style.opacity > 1)) {
-        errors.push({
-          message: 'Opacity must be between 0 and 1',
-          elementId,
-          attribute: 'visual:opacity',
-          code: 'INVALID_OPACITY_RANGE',
-        });
-      }
-      if (metadata.style.strokeWidth !== undefined && 
-          (isNaN(metadata.style.strokeWidth) || metadata.style.strokeWidth < 0)) {
-        errors.push({
-          message: 'Stroke width must be non-negative',
-          elementId,
-          attribute: 'visual:stroke-width',
-          code: 'INVALID_STROKE_WIDTH',
-        });
-      }
-    }
-
-    // Validate waypoints
-    if (metadata.diagram?.waypoints) {
-      for (let i = 0; i < metadata.diagram.waypoints.length; i++) {
-        const waypoint = metadata.diagram.waypoints[i];
-        if (isNaN(waypoint.x) || !isFinite(waypoint.x) || isNaN(waypoint.y) || !isFinite(waypoint.y)) {
-          errors.push({
-            message: `Invalid waypoint coordinates at index ${i}`,
-            elementId,
-            attribute: 'visual:waypoints',
-            code: 'INVALID_WAYPOINT_COORDINATES',
-          });
-        }
-      }
+    // Validate style metadata (simplified - only validating fill color for viz:rgb)
+    if (metadata.style?.fill) {
+      // Basic color validation could be added here if needed
     }
 
     return {
@@ -442,14 +354,18 @@ export class VisualMetadataManager {
   /**
    * Add change listener
    */
-  addChangeListener(listener: (event: VisualMetadataChangeEvent) => void): void {
+  addChangeListener(
+    listener: (event: VisualMetadataChangeEvent) => void
+  ): void {
     this.changeListeners.push(listener);
   }
 
   /**
    * Remove change listener
    */
-  removeChangeListener(listener: (event: VisualMetadataChangeEvent) => void): void {
+  removeChangeListener(
+    listener: (event: VisualMetadataChangeEvent) => void
+  ): void {
     const index = this.changeListeners.indexOf(listener);
     if (index !== -1) {
       this.changeListeners.splice(index, 1);
@@ -472,9 +388,12 @@ export class VisualMetadataManager {
 
   // Private helper methods
 
-  private determineElementType(element: any): ElementVisualMetadata['elementType'] {
+  private determineElementType(
+    element: any
+  ): ElementVisualMetadata['elementType'] {
     // Check element structure to determine type
-    if (element.state !== undefined || element['@_id'] !== undefined) return 'state';
+    if (element.state !== undefined || element['@_id'] !== undefined)
+      return 'state';
     if (element.parallel !== undefined) return 'parallel';
     if (element.final !== undefined) return 'final';
     if (element.history !== undefined) return 'history';
@@ -484,7 +403,20 @@ export class VisualMetadataManager {
 
   private extractLayoutMetadata(element: any): LayoutMetadata | undefined {
     const layout: LayoutMetadata = {};
-    
+
+    // Parse new viz:xywh format: "x y width height"
+    const xywh = this.getVisualAttribute(element, 'xywh');
+    if (xywh) {
+      const parts = xywh.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        layout.x = parseFloat(parts[0]);
+        layout.y = parseFloat(parts[1]);
+        layout.width = parseFloat(parts[2]);
+        layout.height = parseFloat(parts[3]);
+      }
+    }
+
+    // Still check for legacy individual attributes for backward compatibility
     const x = this.getVisualAttribute(element, 'x');
     const y = this.getVisualAttribute(element, 'y');
     const width = this.getVisualAttribute(element, 'width');
@@ -502,7 +434,14 @@ export class VisualMetadataManager {
 
   private extractStyleMetadata(element: any): StyleMetadata | undefined {
     const style: StyleMetadata = {};
-    
+
+    // Parse new viz:rgb format for fill color
+    const rgb = this.getVisualAttribute(element, 'rgb');
+    if (rgb) {
+      style.fill = '#' + rgb;
+    }
+
+    // Still check for legacy individual attributes for backward compatibility
     const fill = this.getVisualAttribute(element, 'fill');
     const stroke = this.getVisualAttribute(element, 'stroke');
     const strokeWidth = this.getVisualAttribute(element, 'stroke-width');
@@ -514,7 +453,8 @@ export class VisualMetadataManager {
     if (fill) style.fill = fill;
     if (stroke) style.stroke = stroke;
     if (strokeWidth !== undefined) style.strokeWidth = parseFloat(strokeWidth);
-    if (borderRadius !== undefined) style.borderRadius = parseFloat(borderRadius);
+    if (borderRadius !== undefined)
+      style.borderRadius = parseFloat(borderRadius);
     if (className) style.className = className;
     if (inlineStyle) {
       // Parse CSS string to object
@@ -527,7 +467,7 @@ export class VisualMetadataManager {
 
   private extractDiagramMetadata(element: any): DiagramMetadata | undefined {
     const diagram: DiagramMetadata = {};
-    
+
     const waypoints = this.getVisualAttribute(element, 'waypoints');
     const labelOffset = this.getVisualAttribute(element, 'label-offset');
     const curveType = this.getVisualAttribute(element, 'curve-type');
@@ -537,25 +477,32 @@ export class VisualMetadataManager {
       diagram.waypoints = this.parseWaypoints(waypoints);
     }
     if (labelOffset) {
-      const [x, y] = labelOffset.split(',').map(s => parseFloat(s.trim()));
+      const [x, y] = labelOffset.split(',').map((s) => parseFloat(s.trim()));
       if (!isNaN(x) && !isNaN(y)) {
         diagram.labelOffset = { x, y };
       }
     }
-    if (curveType) diagram.curveType = curveType as DiagramMetadata['curveType'];
-    if (markerType) diagram.markerType = markerType as DiagramMetadata['markerType'];
+    if (curveType)
+      diagram.curveType = curveType as DiagramMetadata['curveType'];
+    if (markerType)
+      diagram.markerType = markerType as DiagramMetadata['markerType'];
 
     return Object.keys(diagram).length > 0 ? diagram : undefined;
   }
 
-  private extractActionNamespaceMetadata(element: any): ActionNamespaceMetadata | undefined {
+  private extractActionNamespaceMetadata(
+    element: any
+  ): ActionNamespaceMetadata | undefined {
     const actions: ActionNamespaceMetadata = {};
-    
+
     const namespaces = this.getVisualAttribute(element, 'action-namespaces');
     const customActions = this.getVisualAttribute(element, 'custom-actions');
 
     if (namespaces) {
-      actions.namespaces = namespaces.split(',').map(s => s.trim()).filter(Boolean);
+      actions.namespaces = namespaces
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
     if (customActions) {
       try {
@@ -568,32 +515,45 @@ export class VisualMetadataManager {
     return Object.keys(actions).length > 0 ? actions : undefined;
   }
 
-  private extractViewStateMetadata(element: any): ViewStateMetadata | undefined {
+  private extractViewStateMetadata(
+    element: any
+  ): ViewStateMetadata | undefined {
     const view: ViewStateMetadata = {};
-    
+
     const collapsed = this.getVisualAttribute(element, 'collapsed');
     const selected = this.getVisualAttribute(element, 'selected');
 
     if (collapsed) {
-      view.collapsed = collapsed.split(',').map(s => s.trim()).filter(Boolean);
+      view.collapsed = collapsed
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
     if (selected) {
-      view.selected = selected.split(',').map(s => s.trim()).filter(Boolean);
+      view.selected = selected
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
 
     return Object.keys(view).length > 0 ? view : undefined;
   }
 
-  private getVisualAttribute(element: any, attrName: string): string | undefined {
-    return element?.[`@_${this.namespacePrefix}:${attrName}`] || 
-           element?.[`@_visual:${attrName}`]; // Fallback for 'visual' prefix
+  private getVisualAttribute(
+    element: any,
+    attrName: string
+  ): string | undefined {
+    return (
+      element?.[`@_${this.namespacePrefix}:${attrName}`] ||
+      element?.[`@_visual:${attrName}`]
+    ); // Fallback for 'visual' prefix
   }
 
   private parseWaypoints(waypointsString: string): Waypoint[] {
     return waypointsString
       .split(/\s+/)
-      .map(point => {
-        const [x, y] = point.split(',').map(s => parseFloat(s.trim()));
+      .map((point) => {
+        const [x, y] = point.split(',').map((s) => parseFloat(s.trim()));
         return !isNaN(x) && !isNaN(y) ? { x, y } : null;
       })
       .filter((waypoint): waypoint is Waypoint => waypoint !== null);
@@ -601,8 +561,8 @@ export class VisualMetadataManager {
 
   private parseCSSString(cssString: string): Record<string, string> {
     const styles: Record<string, string> = {};
-    cssString.split(';').forEach(rule => {
-      const [property, value] = rule.split(':').map(s => s.trim());
+    cssString.split(';').forEach((rule) => {
+      const [property, value] = rule.split(':').map((s) => s.trim());
       if (property && value) {
         styles[property] = value;
       }
@@ -619,7 +579,10 @@ export class VisualMetadataManager {
         const stateId = state['@_id'];
         if (stateId) {
           this.extractVisualMetadata(state, stateId);
-          this.extractMetadataRecursively(state, parentPath ? `${parentPath}.${stateId}` : stateId);
+          this.extractMetadataRecursively(
+            state,
+            parentPath ? `${parentPath}.${stateId}` : stateId
+          );
         }
       }
     }
@@ -632,7 +595,10 @@ export class VisualMetadataManager {
         const parallelId = parallel['@_id'];
         if (parallelId) {
           this.extractVisualMetadata(parallel, parallelId);
-          this.extractMetadataRecursively(parallel, parentPath ? `${parentPath}.${parallelId}` : parallelId);
+          this.extractMetadataRecursively(
+            parallel,
+            parentPath ? `${parentPath}.${parallelId}` : parallelId
+          );
         }
       }
     }
@@ -640,7 +606,9 @@ export class VisualMetadataManager {
     // Process transitions
     const transitions = parent.transition;
     if (transitions) {
-      const transitionsArray = Array.isArray(transitions) ? transitions : [transitions];
+      const transitionsArray = Array.isArray(transitions)
+        ? transitions
+        : [transitions];
       for (let i = 0; i < transitionsArray.length; i++) {
         const transition = transitionsArray[i];
         const transitionId = `${parentPath || 'root'}-transition-${i}`;
@@ -651,13 +619,13 @@ export class VisualMetadataManager {
 
   private applyAllVisualMetadata(scxmlDoc: SCXMLDocument): SCXMLDocument {
     const enriched: SCXMLDocument = { scxml: { ...scxmlDoc.scxml } };
-    
+
     // Apply metadata to root element
     enriched.scxml = this.applyVisualMetadataToElement(enriched.scxml, 'scxml');
-    
+
     // Recursively apply to all child elements
     enriched.scxml = this.applyMetadataRecursively(enriched.scxml, '');
-    
+
     return enriched;
   }
 
@@ -666,12 +634,17 @@ export class VisualMetadataManager {
 
     // Apply to states
     if (updated.state) {
-      const statesArray = Array.isArray(updated.state) ? updated.state : [updated.state];
+      const statesArray = Array.isArray(updated.state)
+        ? updated.state
+        : [updated.state];
       updated.state = statesArray.map((state: any) => {
         const stateId = state['@_id'];
         if (stateId) {
           let updatedState = this.applyVisualMetadataToElement(state, stateId);
-          updatedState = this.applyMetadataRecursively(updatedState, parentPath ? `${parentPath}.${stateId}` : stateId);
+          updatedState = this.applyMetadataRecursively(
+            updatedState,
+            parentPath ? `${parentPath}.${stateId}` : stateId
+          );
           return updatedState;
         }
         return state;
@@ -683,12 +656,20 @@ export class VisualMetadataManager {
 
     // Apply to parallel states
     if (updated.parallel) {
-      const parallelsArray = Array.isArray(updated.parallel) ? updated.parallel : [updated.parallel];
+      const parallelsArray = Array.isArray(updated.parallel)
+        ? updated.parallel
+        : [updated.parallel];
       updated.parallel = parallelsArray.map((parallel: any) => {
         const parallelId = parallel['@_id'];
         if (parallelId) {
-          let updatedParallel = this.applyVisualMetadataToElement(parallel, parallelId);
-          updatedParallel = this.applyMetadataRecursively(updatedParallel, parentPath ? `${parentPath}.${parallelId}` : parallelId);
+          let updatedParallel = this.applyVisualMetadataToElement(
+            parallel,
+            parallelId
+          );
+          updatedParallel = this.applyMetadataRecursively(
+            updatedParallel,
+            parentPath ? `${parentPath}.${parallelId}` : parallelId
+          );
           return updatedParallel;
         }
         return parallel;
@@ -700,11 +681,15 @@ export class VisualMetadataManager {
 
     // Apply to transitions
     if (updated.transition) {
-      const transitionsArray = Array.isArray(updated.transition) ? updated.transition : [updated.transition];
-      updated.transition = transitionsArray.map((transition: any, i: number) => {
-        const transitionId = `${parentPath || 'root'}-transition-${i}`;
-        return this.applyVisualMetadataToElement(transition, transitionId);
-      });
+      const transitionsArray = Array.isArray(updated.transition)
+        ? updated.transition
+        : [updated.transition];
+      updated.transition = transitionsArray.map(
+        (transition: any, i: number) => {
+          const transitionId = `${parentPath || 'root'}-transition-${i}`;
+          return this.applyVisualMetadataToElement(transition, transitionId);
+        }
+      );
       if (!Array.isArray(parent.transition)) {
         updated.transition = updated.transition[0];
       }
@@ -716,7 +701,7 @@ export class VisualMetadataManager {
   private serializeCleanSCXML(scxmlDoc: SCXMLDocument): string {
     // Remove all visual metadata attributes and namespace declarations
     const cleanDoc = this.removeVisualMetadataRecursively(scxmlDoc);
-    
+
     const builder = new XMLBuilder({
       ignoreAttributes: false,
       attributeNamePrefix: '@_',
@@ -730,12 +715,12 @@ export class VisualMetadataManager {
 
   private removeVisualMetadataRecursively(obj: any): any {
     if (Array.isArray(obj)) {
-      return obj.map(item => this.removeVisualMetadataRecursively(item));
+      return obj.map((item) => this.removeVisualMetadataRecursively(item));
     }
-    
+
     if (obj && typeof obj === 'object') {
       const cleaned: any = {};
-      
+
       for (const [key, value] of Object.entries(obj)) {
         // Skip visual namespace attributes and declarations
         if (key.includes(`${this.namespacePrefix}:`)) {
@@ -744,13 +729,13 @@ export class VisualMetadataManager {
         if (key === `@_xmlns:${this.namespacePrefix}`) {
           continue;
         }
-        
+
         cleaned[key] = this.removeVisualMetadataRecursively(value);
       }
-      
+
       return cleaned;
     }
-    
+
     return obj;
   }
 

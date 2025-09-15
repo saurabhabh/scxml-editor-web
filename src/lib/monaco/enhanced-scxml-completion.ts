@@ -458,11 +458,11 @@ function extractExistingAttributes(tagContent: string): string[] {
   // Match attribute patterns: name="value" or name='value' or name=value
   const attrRegex = /(\w+)\s*=\s*(?:["']([^"']*)["']|(\S+))/g;
   let match;
-  
+
   while ((match = attrRegex.exec(tagContent)) !== null) {
     attributes.push(match[1]);
   }
-  
+
   return attributes;
 }
 
@@ -512,7 +512,7 @@ function analyzeContext(
       context.currentElement = elementName;
 
       const attrPart = tagContent.substring(spaceIndex + 1);
-      
+
       // Extract existing attributes from the entire tag content
       context.existingAttributes = extractExistingAttributes(tagContent);
 
@@ -694,16 +694,21 @@ function createAttributeSuggestions(
   monaco: typeof import('monaco-editor'),
   context: CompletionContext
 ): monaco.languages.CompletionItem[] {
-  if (!context.currentElement) return [];
+  console.log('🔧 Creating attribute suggestions for:', context.currentElement);
+
+  if (!context.currentElement) {
+    console.log('❌ No current element found');
+    return [];
+  }
 
   const validAttributes = ELEMENT_ATTRIBUTES[context.currentElement] || [];
   const existingAttributes = context.existingAttributes || [];
-  
+
   // Filter out attributes that already exist on the element
-  const availableAttributes = validAttributes.filter(attr => 
-    !existingAttributes.includes(attr)
+  const availableAttributes = validAttributes.filter(
+    (attr) => !existingAttributes.includes(attr)
   );
-  
+
   const suggestions: monaco.languages.CompletionItem[] = [];
 
   for (const attr of availableAttributes) {

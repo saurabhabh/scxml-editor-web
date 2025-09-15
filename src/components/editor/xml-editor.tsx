@@ -122,37 +122,12 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
       if (typeof window !== 'undefined') {
         import('monaco-editor').then(async (monaco) => {
           try {
-            // Import enhanced SCXML completion provider
-            const { createEnhancedSCXMLCompletionProvider } = await import(
-              '@/lib/monaco/enhanced-scxml-completion'
-            );
+            // Enhanced completion provider already registered in beforeMount
+            // No need to register again to avoid duplicates
 
-            const enhancedProvider =
-              createEnhancedSCXMLCompletionProvider(monaco);
-
-            // Register for XML language
-            const xmlDisposable =
-              monaco.languages.registerCompletionItemProvider(
-                'xml',
-                enhancedProvider
-              );
-
-            // Also try registering for plain text and other possible languages
-            const plainDisposable =
-              monaco.languages.registerCompletionItemProvider(
-                'plaintext',
-                enhancedProvider
-              );
-
-            // And register for any language with '*'
-            const anyDisposable =
-              monaco.languages.registerCompletionItemProvider(
-                '*',
-                enhancedProvider
-              );
-
-            // Store disposables for cleanup
-            const disposables = [xmlDisposable, plainDisposable, anyDisposable];
+            // Store reference to beforeMount disposable for cleanup
+            const beforeMountDisposable = (window as any).__scxmlBeforeMountDisposable;
+            const disposables = beforeMountDisposable ? [beforeMountDisposable] : [];
 
             // Store disposables on editor for cleanup
             (editor as any)._scxmlDisposables = disposables;
@@ -210,7 +185,7 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
             });
 
 
-            console.log('✅ SCXML Editor setup complete!');
+            console.log('✅ SCXML Editor setup complete - Using beforeMount completion provider!');
           } catch (error) {
             console.error('❌ Error setting up SCXML editor:', error);
           }
@@ -232,31 +207,21 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
         );
         setupSCXMLLanguageSupport(monaco);
         
-        // Import enhanced completion provider
+        // Register enhanced completion provider once in beforeMount
         const { createEnhancedSCXMLCompletionProvider } = await import(
           '@/lib/monaco/enhanced-scxml-completion'
         );
 
-        const beforeMountProvider =
-          createEnhancedSCXMLCompletionProvider(monaco);
+        const beforeMountProvider = createEnhancedSCXMLCompletionProvider(monaco);
 
-        // Register before editor is created
-        const beforeXmlDisposable =
-          monaco.languages.registerCompletionItemProvider(
-            'xml',
-            beforeMountProvider
-          );
-        const beforeAnyDisposable =
-          monaco.languages.registerCompletionItemProvider(
-            '*',
-            beforeMountProvider
-          );
+        // Register only for XML language to avoid duplicates
+        const beforeXmlDisposable = monaco.languages.registerCompletionItemProvider(
+          'xml',
+          beforeMountProvider
+        );
 
-        // Store for cleanup (we'll need to handle this differently)
-        (window as any).__scxmlDisposables = [
-          beforeXmlDisposable,
-          beforeAnyDisposable,
-        ];
+        // Store for cleanup
+        (window as any).__scxmlBeforeMountDisposable = beforeXmlDisposable;
       } catch (error) {
         console.error('❌ Error in beforeMount:', error);
       }

@@ -116,30 +116,24 @@ Converting the Visual SCXML Editor from a VS Code plugin to a standalone web app
 
 ### Custom XML Namespace
 
-Uses `xmlns:visual="http://visual-scxml-editor/metadata"` namespace for non-intrusive visual data storage.
+Uses `xmlns:viz="http://visual-scxml-editor/metadata"` namespace for non-intrusive visual data storage.
 
 ### Example SCXML with Visual Metadata
 
 ```xml
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:visual="http://visual-scxml-editor/metadata"
+       xmlns:viz="http://visual-scxml-editor/metadata"
        initial="idle">
 
   <state id="idle"
-         visual:x="100"
-         visual:y="50"
-         visual:width="120"
-         visual:height="60"
-         visual:style="fill:#e1f5fe;stroke:#0277bd">
-    <transition event="start" target="active"
-                visual:waypoints="200,80 250,120"
-                visual:label-offset="10,5"/>
+         viz:xywh="100 50 120 60"
+         viz:rgb="#e1f5fe">
+    <transition event="start" target="active"/>
   </state>
 
   <state id="active"
-         visual:x="300"
-         visual:y="150"
-         visual:custom-actions="namespace1,namespace2">
+         viz:xywh="300 150 120 60"
+         viz:rgb="#e8f5e8">
     <!-- Standard SCXML content unchanged -->
   </state>
 </scxml>
@@ -147,11 +141,8 @@ Uses `xmlns:visual="http://visual-scxml-editor/metadata"` namespace for non-intr
 
 ### Metadata Types
 
-- **Layout Data**: Position (x,y), dimensions (width, height)
-- **Visual Styling**: Colors, border styles, custom CSS classes
-- **Diagram Layout**: Waypoints for transitions, label positions
-- **Action Namespaces**: Custom action definitions and associations
-- **View State**: Zoom level, pan position, collapsed states
+- **Layout Data**: Combined position and dimensions in viz:xywh format (x y width height)
+- **Visual Styling**: Fill color using viz:rgb attribute
 
 ### Key Features
 

@@ -151,7 +151,9 @@ export function createStateElement(
   id: string,
   stateType: 'simple' | 'compound' | 'parallel' | 'final' = 'simple',
   x?: number,
-  y?: number
+  y?: number,
+  width?: number,
+  height?: number
 ): StateElement {
   const element: StateElement = {
     '@_id': id,
@@ -159,8 +161,9 @@ export function createStateElement(
 
   // Add visual metadata if position provided
   if (x !== undefined && y !== undefined) {
-    (element as any)['@_visual:x'] = x.toString();
-    (element as any)['@_visual:y'] = y.toString();
+    const w = width || 120; // Default width
+    const h = height || 60; // Default height
+    (element as any)['@_viz:xywh'] = `${x} ${y} ${w} ${h}`;
   }
 
   return element;
@@ -372,9 +375,23 @@ export function removeTransitionFromState(
 export function updateStatePosition(
   stateElement: StateElement,
   x: number,
-  y: number
+  y: number,
+  width?: number,
+  height?: number
 ): void {
+  // Extract existing dimensions if not provided
+  const currentXywh = (stateElement as any)['@_viz:xywh'];
+  let w = width || 120; // Default width
+  let h = height || 60; // Default height
+
+  if (currentXywh && !width && !height) {
+    const parts = currentXywh.split(' ');
+    if (parts.length >= 4) {
+      w = parseInt(parts[2]) || 120;
+      h = parseInt(parts[3]) || 60;
+    }
+  }
+
   // Add or update visual metadata attributes using the parser's attribute format
-  (stateElement as any)['@_visual:x'] = x.toString();
-  (stateElement as any)['@_visual:y'] = y.toString();
+  (stateElement as any)['@_viz:xywh'] = `${x} ${y} ${w} ${h}`;
 }

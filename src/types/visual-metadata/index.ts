@@ -164,40 +164,14 @@ export interface ElementVisualMetadata extends VisualMetadata {
 
 /**
  * Visual metadata attributes as they appear in XML
- * These match the actual attribute names used in the visual namespace
+ * These match the actual attribute names used in the viz namespace
  */
 export interface VisualXMLAttributes {
-  /** Position attributes */
-  'visual:x'?: string;
-  'visual:y'?: string;
-  'visual:width'?: string;
-  'visual:height'?: string;
-  'visual:z-index'?: string;
-  
+  /** Position and size attribute (x y width height) */
+  'viz:xywh'?: string;
+
   /** Style attributes */
-  'visual:fill'?: string;
-  'visual:stroke'?: string;
-  'visual:stroke-width'?: string;
-  'visual:border-radius'?: string;
-  'visual:class'?: string;
-  'visual:style'?: string;
-  'visual:opacity'?: string;
-  
-  /** Diagram layout attributes */
-  'visual:waypoints'?: string;
-  'visual:label-offset'?: string;
-  'visual:curve-type'?: string;
-  'visual:marker-type'?: string;
-  'visual:connection-source'?: string;
-  'visual:connection-target'?: string;
-  
-  /** Action namespace attributes */
-  'visual:action-namespaces'?: string;
-  'visual:custom-actions'?: string;
-  
-  /** View state attributes */
-  'visual:collapsed'?: string;
-  'visual:selected'?: string;
+  'viz:rgb'?: string;
 }
 
 /**
@@ -208,7 +182,7 @@ export interface VisualMetadataSerializationConfig {
   includeVisualMetadata: boolean;
   /** Whether to format the output for readability */
   formatOutput: boolean;
-  /** Namespace prefix to use (default: 'visual') */
+  /** Namespace prefix to use (default: 'viz') */
   namespacePrefix?: string;
   /** Namespace URI (default: 'http://visual-scxml-editor/metadata') */
   namespaceURI?: string;
@@ -281,7 +255,7 @@ export const VISUAL_METADATA_CONSTANTS = {
   /** Default namespace URI */
   NAMESPACE_URI: 'http://visual-scxml-editor/metadata',
   /** Default namespace prefix */
-  NAMESPACE_PREFIX: 'visual',
+  NAMESPACE_PREFIX: 'viz',
   /** Supported element types */
   SUPPORTED_ELEMENTS: [
     'scxml',

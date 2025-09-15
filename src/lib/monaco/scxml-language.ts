@@ -320,9 +320,9 @@ export const scxmlHoverInfo: Record<
     description:
       'The root element of an SCXML document. Must contain the SCXML namespace. Can include visual metadata namespace for layout information.',
     syntax:
-      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="initialState">',
+      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:viz="http://visual-scxml-editor/metadata" version="1.0" initial="initialState">',
     example:
-      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:visual="http://visual-scxml-editor/metadata" version="1.0" initial="idle">\n  <state id="idle" visual:x="100" visual:y="50">\n    <transition event="start" target="active" />\n  </state>\n  <state id="active" visual:x="300" visual:y="50" />\n</scxml>',
+      '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:viz="http://visual-scxml-editor/metadata" version="1.0" initial="idle">\n  <state id="idle" viz:xywh="100 50 120 60">\n    <transition event="start" target="active" />\n  </state>\n  <state id="active" viz:xywh="300 50 120 60" />\n</scxml>',
   },
   state: {
     description:
@@ -437,61 +437,17 @@ export function setupSCXMLLanguageSupport(
   // Register visual namespace features first
   registerVisualNamespaceFeatures(monaco, 'xml');
   
-  // Register fallback completion provider for SCXML elements
-  // This works alongside monacopilot to provide immediate suggestions
-  monaco.languages.registerCompletionItemProvider('xml', {
-    triggerCharacters: ['<', ' ', '"', "'", '='],
+  // Legacy completion provider disabled to prevent duplicates
+  // The enhanced completion provider in enhanced-scxml-completion.ts
+  // provides more comprehensive suggestions with better context awareness
 
-    provideCompletionItems: (model, position) => {
-      const textUntilPosition = model.getValueInRange({
-        startLineNumber: 1,
-        startColumn: 1,
-        endLineNumber: position.lineNumber,
-        endColumn: position.column,
-      });
-
-      // Check if we're in an SCXML document
-      const isSCXML =
-        textUntilPosition.includes('<scxml') ||
-        textUntilPosition.includes('http://www.w3.org/2005/07/scxml') ||
-        textUntilPosition.includes('<?xml');
-
-      if (!isSCXML) {
-        return { suggestions: [] };
-      }
-
-      const word = model.getWordUntilPosition(position);
-      const range = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
-      };
-
-      // Provide attribute suggestions if we're inside an element
-      const line = model.getLineContent(position.lineNumber);
-      const beforeCursor = line.substring(0, position.column - 1);
-
-      if (isInsideElement(beforeCursor)) {
-        return {
-          suggestions: getAttributeSuggestions(beforeCursor, monaco, range),
-        };
-      }
-
-      // Convert our completion items to Monaco format for element suggestions
-      const suggestions = scxmlElements.map((item) => ({
-        label: item.label,
-        kind: item.kind,
-        insertText: item.insertText,
-        insertTextRules: item.insertTextRules || 0,
-        documentation: item.documentation,
-        detail: item.detail,
-        range,
-      }));
-
-      return { suggestions };
-    },
-  });
+  // monaco.languages.registerCompletionItemProvider('xml', {
+  //   triggerCharacters: ['<', ' ', '"', "'", '='],
+  //   provideCompletionItems: (model, position) => {
+  //     // Legacy implementation disabled - see enhanced-scxml-completion.ts
+  //     return { suggestions: [] };
+  //   },
+  // });
 
   // Register hover provider
   monaco.languages.registerHoverProvider('xml', {
