@@ -627,7 +627,7 @@ export class SCXMLToXStateConverter {
 
     // Parse viz:rgb for fill color - store as style for now
     if (vizRgb) {
-      (metadata as any).fill = '#' + vizRgb;
+      (metadata as any).fill = vizRgb;
     }
 
     return metadata;

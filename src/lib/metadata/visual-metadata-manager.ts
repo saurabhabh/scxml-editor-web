@@ -194,8 +194,7 @@ export class VisualMetadataManager {
     // Apply style metadata using new viz:rgb format
     if (metadata.style) {
       if (metadata.style.fill) {
-        updatedElement[`@_${this.namespacePrefix}:rgb`] =
-          '#' + metadata.style.fill;
+        updatedElement[`@_${this.namespacePrefix}:rgb`] = metadata.style.fill;
       }
       // Note: Other style properties like stroke, strokeWidth etc. are removed per requirements
       // Only keeping fill color as viz:rgb
@@ -438,7 +437,7 @@ export class VisualMetadataManager {
     // Parse new viz:rgb format for fill color
     const rgb = this.getVisualAttribute(element, 'rgb');
     if (rgb) {
-      style.fill = '#' + rgb;
+      style.fill = rgb;
     }
 
     // Still check for legacy individual attributes for backward compatibility

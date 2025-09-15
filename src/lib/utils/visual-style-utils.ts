@@ -19,7 +19,7 @@ export function computeVisualStyles(
 
     // Convert fill color to backgroundColor
     if (style.fill) {
-      styles.backgroundColor = style.fill;
+      styles.backgroundColor = '#' + style.fill;
     }
 
     // Convert stroke to border properties
@@ -41,7 +41,11 @@ export function computeVisualStyles(
 
     // Use inline style property for custom border styles if available
     if (style.style?.borderStyle) {
-      styles.borderStyle = style.style.borderStyle as 'solid' | 'dashed' | 'dotted' | 'double';
+      styles.borderStyle = style.style.borderStyle as
+        | 'solid'
+        | 'dashed'
+        | 'dotted'
+        | 'double';
     }
   }
 
@@ -112,7 +116,9 @@ export function computeVisualStyles(
 /**
  * Converts VisualStyles to inline CSS style object
  */
-export function visualStylesToCSS(visualStyles: VisualStyles): React.CSSProperties {
+export function visualStylesToCSS(
+  visualStyles: VisualStyles
+): React.CSSProperties {
   const cssStyles: React.CSSProperties = {};
 
   if (visualStyles.backgroundColor) {
