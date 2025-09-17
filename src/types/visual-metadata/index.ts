@@ -14,6 +14,8 @@ export interface VisualMetadata {
   style?: StyleMetadata;
   /** Diagram-specific layout data */
   diagram?: DiagramMetadata;
+  /** Container-specific metadata for compound states */
+  container?: ContainerMetadata;
   /** Custom action namespace definitions */
   actions?: ActionNamespaceMetadata;
   /** View state information */
@@ -149,15 +151,52 @@ export interface ViewStateMetadata {
 }
 
 /**
+ * Container-specific metadata for compound and parallel states
+ */
+export interface ContainerMetadata {
+  /** Layout strategy for child elements */
+  childLayout: 'auto' | 'grid' | 'manual' | 'force';
+  /** Padding inside the container */
+  padding: number;
+  /** Minimum container size */
+  minSize: { width: number; height: number };
+  /** Whether the container can be collapsed */
+  isCollapsible: boolean;
+  /** Current expanded/collapsed state */
+  isExpanded: boolean;
+  /** Child element positions (for manual layout) */
+  childPositions?: Record<string, { x: number; y: number }>;
+  /** Grid layout options */
+  gridOptions?: {
+    columns: number;
+    rows?: number;
+    spacing: { x: number; y: number };
+    alignment: 'center' | 'start' | 'end';
+  };
+  /** Force-directed layout options */
+  forceOptions?: {
+    strength: number;
+    distance: number;
+    iterations: number;
+  };
+}
+
+/**
  * Complete visual metadata for an SCXML element
  */
 export interface ElementVisualMetadata extends VisualMetadata {
   /** Element ID this metadata belongs to */
   elementId: string;
   /** Element type (state, transition, etc.) */
-  elementType: 'state' | 'transition' | 'parallel' | 'final' | 'history' | 'scxml';
+  elementType: 'state' | 'transition' | 'parallel' | 'final' | 'history' | 'scxml' | 'compound';
   /** Parent element ID (for hierarchical layout) */
   parentId?: string;
+  /** Child element IDs (for compound/parallel states) */
+  childIds?: string[];
+  /** Depth in the hierarchy (0 = root level) */
+  depth?: number;
+  /** Whether this element acts as a container */
+  isContainer?: boolean;
   /** Timestamp of last modification */
   lastModified?: number;
 }

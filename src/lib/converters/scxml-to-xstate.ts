@@ -5,6 +5,14 @@ import type {
   SCXMLStateNodeData,
   SCXMLTransitionEdgeData,
 } from '@/components/diagram';
+import type {
+  HierarchicalNode,
+  CompoundStateNodeData,
+  HierarchicalLayout,
+  LayoutStrategy,
+  Rectangle,
+} from '@/types/hierarchical-node';
+import { ContainerLayoutManager } from '@/lib/layout/container-layout-manager';
 
 export interface XStateMachineConfig {
   id?: string;
@@ -24,9 +32,19 @@ export interface VisualMetadata {
 /**
  * Converts SCXML documents to XState v5 machine configurations and React Flow diagram data
  */
+export interface StateRegistryEntry {
+  state: any;
+  parentPath: string;
+  children: string[];
+  isContainer: boolean;
+  depth: number;
+  elementType: 'state' | 'parallel' | 'final' | 'history';
+}
+
 export class SCXMLToXStateConverter {
-  private stateRegistry: Map<string, { state: any; parentPath: string }> =
-    new Map();
+  private stateRegistry: Map<string, StateRegistryEntry> = new Map();
+  private hierarchyMap: Map<string, string[]> = new Map(); // parent -> children mapping
+  private parentMap: Map<string, string> = new Map(); // child -> parent mapping
   private rootScxml: any = null;
   /**
    * Convert SCXML document to XState machine configuration
@@ -90,7 +108,7 @@ export class SCXMLToXStateConverter {
   }
 
   /**
-   * Convert SCXML document to React Flow nodes and edges
+   * Convert SCXML document to React Flow nodes and edges with hierarchical layout
    */
   convertToReactFlow(scxmlDoc: SCXMLDocument): {
     nodes: Node[];
@@ -99,57 +117,433 @@ export class SCXMLToXStateConverter {
     const scxml = scxmlDoc.scxml;
     this.rootScxml = scxml;
 
-    console.log('🎆 Starting React Flow conversion...');
+    console.log('🎆 Starting hierarchical React Flow conversion...');
 
     // First, ensure state registry is populated
     if (this.stateRegistry.size === 0) {
       console.log('State registry empty, populating...');
       this.stateRegistry.clear();
+      this.hierarchyMap.clear();
+      this.parentMap.clear();
       this.registerAllStates(scxml, '');
     }
 
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
-
-    // Convert all registered states to nodes with hierarchical positioning
-    const stateEntries = Array.from(this.stateRegistry.entries());
-    console.log(
-      'Converting',
-      stateEntries.length,
-      'registered states to nodes'
-    );
-
-    for (const [stateId, stateInfo] of stateEntries) {
-      const node = this.convertStateToNodeHierarchical(stateId, stateInfo);
-      if (node) {
-        nodes.push(node);
-        console.log(`✓ Created node for: ${stateId}`);
-      }
-    }
-
-    // Convert all transitions to edges
-    console.log('Converting transitions to edges...');
-    this.collectAllTransitions(scxml, edges);
+    const layoutManager = new ContainerLayoutManager();
+    const hierarchicalLayout = this.createHierarchicalLayout(layoutManager);
 
     console.log(
-      `🎉 Conversion complete: ${nodes.length} nodes, ${edges.length} edges`
+      `🎉 Hierarchical conversion complete: ${hierarchicalLayout.nodes.length} nodes, ${hierarchicalLayout.edges.length} edges`
     );
 
     // Debug output
+    console.log('Generated hierarchical nodes:');
+    hierarchicalLayout.nodes.forEach((node) => {
+      console.log(
+        `  ${node.id}: type=${node.data.stateType}, container=${
+          (node.data as any).children?.length || 0
+        } children, depth=${node.depth}`
+      );
+    });
+
+    return {
+      nodes: hierarchicalLayout.nodes,
+      edges: hierarchicalLayout.edges,
+    };
+  }
+
+  /**
+   * Create hierarchical layout with proper visual containment
+   */
+  private createHierarchicalLayout(
+    layoutManager: ContainerLayoutManager
+  ): HierarchicalLayout {
+    const allNodes: HierarchicalNode[] = [];
+    const edges: Edge[] = [];
+
+    // First pass: Create all nodes with basic information
+    const stateEntries = Array.from(this.stateRegistry.entries());
+    console.log('Creating', stateEntries.length, 'hierarchical nodes...');
+
+    for (const [stateId, stateInfo] of stateEntries) {
+      const node = this.createHierarchicalNode(stateId, stateInfo);
+      if (node) {
+        allNodes.push(node);
+      }
+    }
+
+    // Filter to only include root-level nodes (nodes without parents) for ReactFlow
+    const rootNodes = allNodes.filter((node) => !node.parentId);
     console.log(
-      'Generated nodes:',
-      nodes.map((n) => ({
-        id: n.id,
-        type: n.data.stateType,
-        position: n.position,
-      }))
-    );
-    console.log(
-      'Generated edges:',
-      edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
+      `Filtered to ${rootNodes.length} root nodes from ${allNodes.length} total nodes`
     );
 
-    return { nodes, edges };
+    // For each container node, attach all its descendant nodes
+    rootNodes.forEach((rootNode) => {
+      if (rootNode.childIds && rootNode.childIds.length > 0) {
+        const descendants = this.getAllDescendants(rootNode.id, allNodes);
+        (rootNode.data as any).descendants = descendants;
+        console.log(
+          `🔍 Container ${rootNode.id} has ${descendants.length} descendants:`
+        );
+        descendants.forEach((desc) => {
+          console.log(
+            `  - ${desc.id} (parent: ${desc.parentId}, position: ${
+              desc.position?.x || 0
+            }, ${desc.position?.y || 0})`
+          );
+        });
+      } else {
+        console.log(
+          `🔍 Node ${rootNode.id} has no children, skipping descendant attachment`
+        );
+      }
+    });
+
+    // Position container nodes and their children
+    this.positionHierarchicalNodes(allNodes, layoutManager);
+
+    // Update descendant data with the new positions after layout
+    rootNodes.forEach((rootNode) => {
+      if (rootNode.childIds && rootNode.childIds.length > 0) {
+        const updatedDescendants = this.getAllDescendants(
+          rootNode.id,
+          allNodes
+        );
+        (rootNode.data as any).descendants = updatedDescendants;
+        console.log(`📐 Updated positions for container ${rootNode.id}:`);
+        updatedDescendants.forEach((desc) => {
+          console.log(
+            `  - ${desc.id} positioned at (${desc.position?.x || 0}, ${
+              desc.position?.y || 0
+            })`
+          );
+        });
+      }
+    });
+
+    // Convert transitions to edges
+    console.log('Converting transitions to edges...');
+    this.collectAllTransitions(this.rootScxml, edges);
+
+    return {
+      nodes: rootNodes, // Only return root nodes for ReactFlow
+      edges,
+      hierarchy: this.hierarchyMap,
+      parentMap: this.parentMap,
+    };
+  }
+
+  /**
+   * Get all descendant nodes of a given parent
+   */
+  private getAllDescendants(
+    parentId: string,
+    allNodes: HierarchicalNode[]
+  ): HierarchicalNode[] {
+    const descendants: HierarchicalNode[] = [];
+    const directChildren = allNodes.filter(
+      (node) => node.parentId === parentId
+    );
+
+    for (const child of directChildren) {
+      descendants.push(child);
+      // Recursively get descendants of this child
+      const childDescendants = this.getAllDescendants(child.id, allNodes);
+      descendants.push(...childDescendants);
+    }
+
+    return descendants;
+  }
+
+  /**
+   * Create a hierarchical node from state registry entry
+   */
+  private createHierarchicalNode(
+    stateId: string,
+    stateInfo: StateRegistryEntry
+  ): HierarchicalNode | null {
+    const state = stateInfo.state;
+    const isContainer = stateInfo.isContainer;
+
+    // Extract visual metadata
+    const visualMetadata = this.extractVisualMetadata(state);
+
+    // Extract actions
+    const onentry = this.getElements(state, 'onentry');
+    const onexit = this.getElements(state, 'onexit');
+    const entryActions = onentry ? this.extractActionsText(onentry) : [];
+    const exitActions = onexit ? this.extractActionsText(onexit) : [];
+
+    // Determine node type
+    let nodeType = 'scxmlState';
+    let stateType: SCXMLStateNodeData['stateType'] = 'simple';
+
+    if (stateInfo.elementType === 'parallel') {
+      nodeType = 'scxmlCompound'; // We'll use the same component for parallel
+      stateType = 'parallel';
+    } else if (stateInfo.elementType === 'history') {
+      stateType = 'simple'; // History states shown as simple nodes
+    } else if (isContainer) {
+      nodeType = 'scxmlCompound';
+      stateType = 'compound';
+    } else if (state['@_type'] === 'final') {
+      stateType = 'final';
+    }
+
+    // Check if this is an initial state
+    const isInitial = this.isInitialState(stateId, stateInfo.parentPath);
+
+    // Calculate initial position (will be refined later)
+    const position = this.calculateInitialPosition(stateId, stateInfo);
+
+    // Create base node data
+    const baseNodeData: SCXMLStateNodeData = {
+      label: stateId,
+      stateType,
+      isInitial,
+      entryActions,
+      exitActions,
+    };
+
+    // Create hierarchical node
+    const node: HierarchicalNode = {
+      id: stateId,
+      type: nodeType,
+      position,
+      data: baseNodeData,
+      parentId: stateInfo.parentPath ? this.parentMap.get(stateId) : undefined,
+      childIds: stateInfo.children,
+      depth: stateInfo.depth,
+    };
+
+    // If this is a container, add container-specific data
+    if (isContainer) {
+      const containerData: CompoundStateNodeData = {
+        ...baseNodeData,
+        children: stateInfo.children,
+        containerMetadata: {
+          childLayout: 'auto',
+          padding: 20,
+          minSize: { width: 200, height: 150 },
+          isCollapsible: true,
+          isExpanded: true,
+        },
+      };
+      node.data = containerData;
+    }
+
+    // Apply visual metadata if available
+    if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
+      node.position = { x: visualMetadata.x, y: visualMetadata.y };
+    }
+
+    if (
+      visualMetadata.width !== undefined ||
+      visualMetadata.height !== undefined
+    ) {
+      (node.data as any).width = visualMetadata.width;
+      (node.data as any).height = visualMetadata.height;
+    }
+
+    return node;
+  }
+
+  /**
+   * Position hierarchical nodes using container layout algorithms
+   */
+  private positionHierarchicalNodes(
+    nodes: HierarchicalNode[],
+    layoutManager: ContainerLayoutManager
+  ): void {
+    // Group nodes by depth level
+    const nodesByDepth = new Map<number, HierarchicalNode[]>();
+    nodes.forEach((node) => {
+      if (!nodesByDepth.has(node.depth)) {
+        nodesByDepth.set(node.depth, []);
+      }
+      nodesByDepth.get(node.depth)!.push(node);
+    });
+
+    // Position nodes level by level, starting from the deepest
+    const maxDepth = Math.max(...Array.from(nodesByDepth.keys()));
+
+    for (let depth = maxDepth; depth >= 0; depth--) {
+      const nodesAtDepth = nodesByDepth.get(depth) || [];
+
+      for (const node of nodesAtDepth) {
+        if (node.childIds && node.childIds.length > 0) {
+          // This is a container - position its children
+          this.positionContainerChildren(node, nodes, layoutManager);
+        }
+      }
+    }
+
+    // Position root level nodes
+    this.positionRootNodes(nodesByDepth.get(0) || [], layoutManager);
+  }
+
+  /**
+   * Position children within a container node with relative coordinates
+   */
+  private positionContainerChildren(
+    containerNode: HierarchicalNode,
+    allNodes: HierarchicalNode[],
+    layoutManager: ContainerLayoutManager
+  ): void {
+    const childNodes = allNodes.filter((node) =>
+      containerNode.childIds?.includes(node.id)
+    );
+
+    if (childNodes.length === 0) return;
+
+    // Calculate container bounds
+    const containerData = containerNode.data as CompoundStateNodeData;
+    const padding = containerData.containerMetadata?.padding || 20;
+    const headerHeight = 60; // Height reserved for container header
+
+    // Define the available space for children (relative to container)
+    const childAreaBounds: Rectangle = {
+      x: 0, // Relative to container
+      y: 0, // Relative to container
+      width: ((containerData as any).width || 250) - padding * 2,
+      height:
+        ((containerData as any).height || 200) - headerHeight - padding * 2,
+    };
+
+    // Use layout strategy from container metadata
+    const layoutStrategy: LayoutStrategy = {
+      type: containerData.containerMetadata?.childLayout || 'auto',
+    };
+
+    // Position children using layout manager (this returns relative positions)
+    const childPositions = layoutManager.arrangeChildren(
+      childAreaBounds,
+      childNodes,
+      layoutStrategy,
+      {
+        padding: 10,
+        spacing: { x: 20, y: 20 },
+        alignment: 'center',
+      }
+    );
+
+    // Apply RELATIVE positions to child nodes (relative to parent container)
+    childPositions.forEach((pos) => {
+      const childNode = childNodes.find((n) => n.id === pos.id);
+      if (childNode) {
+        // Store position relative to container (not absolute)
+        childNode.position = {
+          x: pos.x, // Already relative from arrangeChildren
+          y: pos.y, // Already relative from arrangeChildren
+        };
+
+        // Update node data with size if specified
+        if (pos.width && pos.height) {
+          (childNode.data as any).width = pos.width;
+          (childNode.data as any).height = pos.height;
+        }
+
+        console.log(
+          `Positioned child ${childNode.id} at relative coords: (${pos.x}, ${pos.y}) within container ${containerNode.id}`
+        );
+      }
+    });
+
+    // Calculate required container size based on children
+    let maxChildX = 0;
+    let maxChildY = 0;
+
+    childPositions.forEach((pos) => {
+      maxChildX = Math.max(maxChildX, pos.x + (pos.width || 120));
+      maxChildY = Math.max(maxChildY, pos.y + (pos.height || 60));
+    });
+
+    // Update container size to fit children plus padding and header
+    const requiredWidth = maxChildX + padding * 2;
+    const requiredHeight = maxChildY + headerHeight + padding * 2;
+
+    const currentWidth = (containerData as any).width || 250;
+    const currentHeight = (containerData as any).height || 200;
+
+    if (requiredWidth > currentWidth || requiredHeight > currentHeight) {
+      (containerData as any).width = Math.max(currentWidth, requiredWidth);
+      (containerData as any).height = Math.max(currentHeight, requiredHeight);
+
+      console.log(
+        `Updated container ${containerNode.id} size to: ${
+          (containerData as any).width
+        }x${(containerData as any).height}`
+      );
+    }
+
+    // Store bounds for layout calculations
+    containerNode.containerBounds = {
+      x: containerNode.position.x,
+      y: containerNode.position.y,
+      width: (containerData as any).width,
+      height: (containerData as any).height,
+    };
+  }
+
+  /**
+   * Position root level nodes (nodes without parents)
+   */
+  private positionRootNodes(
+    rootNodes: HierarchicalNode[],
+    layoutManager: ContainerLayoutManager
+  ): void {
+    if (rootNodes.length === 0) return;
+
+    // Create a virtual container for root nodes
+    const viewportBounds: Rectangle = {
+      x: 50,
+      y: 50,
+      width: 1200,
+      height: 800,
+    };
+
+    const layoutStrategy: LayoutStrategy = { type: 'auto' };
+
+    const positions = layoutManager.arrangeChildren(
+      viewportBounds,
+      rootNodes,
+      layoutStrategy,
+      {
+        padding: 50,
+        spacing: { x: 100, y: 100 },
+        alignment: 'center',
+      }
+    );
+
+    // Apply positions to root nodes
+    positions.forEach((pos) => {
+      const node = rootNodes.find((n) => n.id === pos.id);
+      if (node) {
+        // Only update position if not explicitly set by visual metadata
+        const hasExplicitPosition =
+          node.position.x !== 0 || node.position.y !== 0;
+        if (!hasExplicitPosition) {
+          node.position = { x: pos.x, y: pos.y };
+        }
+      }
+    });
+  }
+
+  /**
+   * Calculate initial position for a node (before layout algorithms)
+   */
+  private calculateInitialPosition(
+    stateId: string,
+    stateInfo: StateRegistryEntry
+  ): { x: number; y: number } {
+    // Use existing method but with some modifications for hierarchy
+    const depth = stateInfo.depth;
+    const baseOffset = depth * 50; // Slight offset per depth level
+
+    return {
+      x: 100 + baseOffset,
+      y: 100 + baseOffset,
+    };
   }
 
   /**
@@ -860,9 +1254,17 @@ export class SCXMLToXStateConverter {
   }
 
   /**
-   * Register all states in the SCXML document with their parent paths
+   * Register all states in the SCXML document with their parent paths and hierarchy
    */
   private registerAllStates(parent: any, parentPath: string): void {
+    const parentId = parentPath ? parentPath.split('.').pop() : null;
+    const depth = parentPath ? parentPath.split('.').length : 0;
+
+    // Initialize parent's children array if not exists
+    if (parentId && !this.hierarchyMap.has(parentId)) {
+      this.hierarchyMap.set(parentId, []);
+    }
+
     // Register regular states
     const states = this.getElements(parent, 'state');
     if (states) {
@@ -871,15 +1273,42 @@ export class SCXMLToXStateConverter {
         const stateId = this.getAttribute(state, 'id');
         if (stateId) {
           const fullPath = parentPath ? `${parentPath}.${stateId}` : stateId;
-          this.stateRegistry.set(stateId, { state, parentPath });
+
+          // Check if this state has children (compound state)
+          const hasChildren = this.hasChildStates(state);
+
+          const registryEntry: StateRegistryEntry = {
+            state,
+            parentPath,
+            children: [],
+            isContainer: hasChildren,
+            depth,
+            elementType: 'state',
+          };
+
+          this.stateRegistry.set(stateId, registryEntry);
+
+          // Update hierarchy maps
+          if (parentId) {
+            this.hierarchyMap.get(parentId)?.push(stateId);
+            this.parentMap.set(stateId, parentId);
+          }
+
           console.log(
             `📍 Registered state: ${stateId} under parent: '${
               parentPath || 'root'
-            }'`
+            }' (container: ${hasChildren})`
           );
 
           // Recursively register nested states
           this.registerAllStates(state, fullPath);
+
+          // After recursive call, collect children for this state
+          if (hasChildren) {
+            const childStates = this.collectDirectChildIds(state);
+            registryEntry.children = childStates;
+            this.hierarchyMap.set(stateId, childStates);
+          }
         }
       }
     }
@@ -894,7 +1323,26 @@ export class SCXMLToXStateConverter {
           const fullPath = parentPath
             ? `${parentPath}.${parallelId}`
             : parallelId;
-          this.stateRegistry.set(parallelId, { state: parallel, parentPath });
+
+          const hasChildren = this.hasChildStates(parallel);
+
+          const registryEntry: StateRegistryEntry = {
+            state: parallel,
+            parentPath,
+            children: [],
+            isContainer: true, // Parallel states are always containers
+            depth,
+            elementType: 'parallel',
+          };
+
+          this.stateRegistry.set(parallelId, registryEntry);
+
+          // Update hierarchy maps
+          if (parentId) {
+            this.hierarchyMap.get(parentId)?.push(parallelId);
+            this.parentMap.set(parallelId, parentId);
+          }
+
           console.log(
             `⚡ Registered parallel: ${parallelId} under parent: '${
               parentPath || 'root'
@@ -903,6 +1351,11 @@ export class SCXMLToXStateConverter {
 
           // Recursively register nested states within parallel
           this.registerAllStates(parallel, fullPath);
+
+          // After recursive call, collect children for this parallel state
+          const childStates = this.collectDirectChildIds(parallel);
+          registryEntry.children = childStates;
+          this.hierarchyMap.set(parallelId, childStates);
         }
       }
     }
@@ -917,7 +1370,24 @@ export class SCXMLToXStateConverter {
           const fullPath = parentPath
             ? `${parentPath}.${historyId}`
             : historyId;
-          this.stateRegistry.set(historyId, { state: history, parentPath });
+
+          const registryEntry: StateRegistryEntry = {
+            state: history,
+            parentPath,
+            children: [],
+            isContainer: false,
+            depth,
+            elementType: 'history',
+          };
+
+          this.stateRegistry.set(historyId, registryEntry);
+
+          // Update hierarchy maps
+          if (parentId) {
+            this.hierarchyMap.get(parentId)?.push(historyId);
+            this.parentMap.set(historyId, parentId);
+          }
+
           console.log(
             `📜 Registered history: ${historyId} under parent: '${
               parentPath || 'root'
@@ -926,6 +1396,92 @@ export class SCXMLToXStateConverter {
         }
       }
     }
+  }
+
+  /**
+   * Check if a state element has child states
+   */
+  private hasChildStates(element: any): boolean {
+    const childStates = this.getElements(element, 'state');
+    const childParallels = this.getElements(element, 'parallel');
+    const childHistories = this.getElements(element, 'history');
+
+    return !!(childStates || childParallels || childHistories);
+  }
+
+  /**
+   * Collect direct child state IDs from an element
+   */
+  private collectDirectChildIds(element: any): string[] {
+    const childIds: string[] = [];
+
+    // Collect child states
+    const states = this.getElements(element, 'state');
+    if (states) {
+      const statesArray = Array.isArray(states) ? states : [states];
+      for (const state of statesArray) {
+        const stateId = this.getAttribute(state, 'id');
+        if (stateId) childIds.push(stateId);
+      }
+    }
+
+    // Collect child parallel states
+    const parallels = this.getElements(element, 'parallel');
+    if (parallels) {
+      const parallelsArray = Array.isArray(parallels) ? parallels : [parallels];
+      for (const parallel of parallelsArray) {
+        const parallelId = this.getAttribute(parallel, 'id');
+        if (parallelId) childIds.push(parallelId);
+      }
+    }
+
+    // Collect child history states
+    const histories = this.getElements(element, 'history');
+    if (histories) {
+      const historiesArray = Array.isArray(histories) ? histories : [histories];
+      for (const history of historiesArray) {
+        const historyId = this.getAttribute(history, 'id');
+        if (historyId) childIds.push(historyId);
+      }
+    }
+
+    return childIds;
+  }
+
+  /**
+   * Get hierarchy information
+   */
+  getHierarchyMap(): Map<string, string[]> {
+    return this.hierarchyMap;
+  }
+
+  /**
+   * Get parent mapping
+   */
+  getParentMap(): Map<string, string> {
+    return this.parentMap;
+  }
+
+  /**
+   * Get children of a specific state
+   */
+  getChildren(stateId: string): string[] {
+    return this.hierarchyMap.get(stateId) || [];
+  }
+
+  /**
+   * Get parent of a specific state
+   */
+  getParent(stateId: string): string | undefined {
+    return this.parentMap.get(stateId);
+  }
+
+  /**
+   * Check if a state is a container (compound or parallel)
+   */
+  isContainer(stateId: string): boolean {
+    const entry = this.stateRegistry.get(stateId);
+    return entry?.isContainer || false;
   }
 
   /**

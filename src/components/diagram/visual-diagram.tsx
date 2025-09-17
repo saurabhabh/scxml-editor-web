@@ -22,6 +22,7 @@ import {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
+import { CompoundStateNode } from './nodes/compound-state-node';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { SimulationControls } from '../simulation';
 import { SCXMLParser } from '@/lib/parsers/scxml-parser';
@@ -53,6 +54,7 @@ interface VisualDiagramProps {
 // Custom node types for SCXML elements
 const nodeTypes: NodeTypes = {
   scxmlState: SCXMLStateNode,
+  scxmlCompound: CompoundStateNode,
 };
 
 // Custom edge types for SCXML transitions
@@ -135,6 +137,121 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   const parserRef = React.useRef<SCXMLParser | null>(null);
   const metadataManagerRef = React.useRef<VisualMetadataManager | null>(null);
   const scxmlDocRef = React.useRef<SCXMLDocument | null>(null);
+
+  // Define handlers first, before they're used in parsedData
+  // Node content change handlers
+  const handleNodeLabelChange = React.useCallback(
+    (nodeId: string, newLabel: string) => {
+      if (!parserRef.current || !onSCXMLChange) return;
+
+      try {
+        const parseResult = parserRef.current.parse(scxmlContent);
+        if (parseResult.success && parseResult.data) {
+          // Find and update the state element
+          const scxmlDoc = parseResult.data;
+          const stateElement = findStateById(scxmlDoc, nodeId);
+
+          if (stateElement) {
+            stateElement['@_id'] = newLabel;
+
+            // Update transitions that target this state
+            updateTransitionTargets(scxmlDoc, nodeId, newLabel);
+
+            // Serialize updated SCXML
+            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+            onSCXMLChange(updatedSCXML);
+            console.log(
+              'Synced label change to SCXML:',
+              nodeId,
+              '->',
+              newLabel
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync label change:', error);
+      }
+    },
+    [scxmlContent, onSCXMLChange]
+  );
+
+  const handleNodeActionsChange = React.useCallback(
+    (nodeId: string, entryActions: string[], exitActions: string[]) => {
+      if (!parserRef.current || !onSCXMLChange) return;
+
+      try {
+        const parseResult = parserRef.current.parse(scxmlContent);
+        if (parseResult.success && parseResult.data) {
+          const scxmlDoc = parseResult.data;
+          const stateElement = findStateById(scxmlDoc, nodeId);
+
+          if (stateElement) {
+            // Update onentry actions
+            updateStateActions(stateElement, 'onentry', entryActions);
+            // Update onexit actions
+            updateStateActions(stateElement, 'onexit', exitActions);
+
+            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+            onSCXMLChange(updatedSCXML);
+            console.log('Synced actions change to SCXML:', nodeId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync actions change:', error);
+      }
+    },
+    [scxmlContent, onSCXMLChange]
+  );
+
+  const handleNodeStateTypeChange = React.useCallback(
+    (nodeId: string, newStateType: string) => {
+      if (!parserRef.current || !onSCXMLChange) return;
+
+      try {
+        const parseResult = parserRef.current.parse(scxmlContent);
+        if (parseResult.success && parseResult.data) {
+          const scxmlDoc = parseResult.data;
+          const stateElement = findStateById(scxmlDoc, nodeId);
+
+          if (stateElement) {
+            // Update state type (this might require changing the element type)
+            updateStateType(stateElement, newStateType as any);
+
+            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+            onSCXMLChange(updatedSCXML);
+            console.log(
+              'Synced state type change to SCXML:',
+              nodeId,
+              '->',
+              newStateType
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync state type change:', error);
+      }
+    },
+    [scxmlContent, onSCXMLChange]
+  );
+
+  // Handle container expand/collapse
+  const handleChildrenToggle = React.useCallback(
+    (nodeId: string, isExpanded: boolean) => {
+      console.log(`Container ${nodeId} toggle: ${isExpanded}`);
+      // TODO: Optionally sync this state to visual metadata/SCXML
+    },
+    []
+  );
+
+  // Handle adding new child to a container
+  const handleChildAdd = React.useCallback(
+    (parentId: string) => {
+      console.log(`Adding child to container: ${parentId}`);
+      // TODO: Implement child state creation
+    },
+    []
+  );
+
   // Parse SCXML first to get initial data
   const parsedData = useMemo(() => {
     if (!scxmlContent.trim()) {
@@ -212,6 +329,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               handleNodeStateTypeChange(node.id, newStateType),
             onActionsChange: (entryActions: string[], exitActions: string[]) =>
               handleNodeActionsChange(node.id, entryActions, exitActions),
+            // Add container-specific callbacks for compound nodes
+            onChildrenToggle: nodeUpdate.type === 'scxmlCompound' ? handleChildrenToggle : undefined,
+            onChildAdd: nodeUpdate.type === 'scxmlCompound' ? handleChildAdd : undefined,
           };
 
           return nodeUpdate;
@@ -325,101 +445,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     setEdges(parsedData.edges);
   }, [parsedData.nodes, parsedData.edges, setNodes, setEdges]);
 
-  // Node content change handlers
-  const handleNodeLabelChange = React.useCallback(
-    (nodeId: string, newLabel: string) => {
-      if (!parserRef.current || !onSCXMLChange) return;
-
-      try {
-        const parseResult = parserRef.current.parse(scxmlContent);
-        if (parseResult.success && parseResult.data) {
-          // Find and update the state element
-          const scxmlDoc = parseResult.data;
-          const stateElement = findStateById(scxmlDoc, nodeId);
-
-          if (stateElement) {
-            stateElement['@_id'] = newLabel;
-
-            // Update transitions that target this state
-            updateTransitionTargets(scxmlDoc, nodeId, newLabel);
-
-            // Serialize updated SCXML
-            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
-            onSCXMLChange(updatedSCXML);
-            console.log(
-              'Synced label change to SCXML:',
-              nodeId,
-              '->',
-              newLabel
-            );
-          }
-        }
-      } catch (error) {
-        console.error('Failed to sync label change:', error);
-      }
-    },
-    [scxmlContent, onSCXMLChange]
-  );
-
-  const handleNodeActionsChange = React.useCallback(
-    (nodeId: string, entryActions: string[], exitActions: string[]) => {
-      if (!parserRef.current || !onSCXMLChange) return;
-
-      try {
-        const parseResult = parserRef.current.parse(scxmlContent);
-        if (parseResult.success && parseResult.data) {
-          const scxmlDoc = parseResult.data;
-          const stateElement = findStateById(scxmlDoc, nodeId);
-
-          if (stateElement) {
-            // Update onentry actions
-            updateStateActions(stateElement, 'onentry', entryActions);
-            // Update onexit actions
-            updateStateActions(stateElement, 'onexit', exitActions);
-
-            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
-            onSCXMLChange(updatedSCXML);
-            console.log('Synced actions change to SCXML:', nodeId);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to sync actions change:', error);
-      }
-    },
-    [scxmlContent, onSCXMLChange]
-  );
-
-  const handleNodeStateTypeChange = React.useCallback(
-    (nodeId: string, newStateType: string) => {
-      if (!parserRef.current || !onSCXMLChange) return;
-
-      try {
-        const parseResult = parserRef.current.parse(scxmlContent);
-        if (parseResult.success && parseResult.data) {
-          const scxmlDoc = parseResult.data;
-          const stateElement = findStateById(scxmlDoc, nodeId);
-
-          if (stateElement) {
-            // Update state type (this might require changing the element type)
-            updateStateType(stateElement, newStateType as any);
-
-            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
-            onSCXMLChange(updatedSCXML);
-            console.log(
-              'Synced state type change to SCXML:',
-              nodeId,
-              '->',
-              newStateType
-            );
-          }
-        }
-      } catch (error) {
-        console.error('Failed to sync state type change:', error);
-      }
-    },
-    [scxmlContent, onSCXMLChange]
-  );
-
   const handleNodePositionChange = React.useCallback(
     (nodeId: string, x: number, y: number) => {
       console.log('🎯 === handleNodePositionChange called ===');
@@ -532,29 +557,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     },
     [scxmlContent, onSCXMLChange, setEdges]
   );
-
-  // Sync visual metadata changes back to SCXML
-  const syncMetadataToSCXML = React.useCallback(async () => {
-    if (!parserRef.current || !metadataManagerRef.current || !onSCXMLChange) {
-      return;
-    }
-
-    try {
-      // Parse current SCXML to get the document structure
-      const parseResult = parserRef.current.parse(scxmlContent);
-      if (parseResult.success && parseResult.data) {
-        // Serialize with updated visual metadata
-        const updatedSCXML = parserRef.current.serialize(
-          parseResult.data,
-          true
-        );
-        onSCXMLChange(updatedSCXML);
-        console.log('Synced visual metadata changes to SCXML');
-      }
-    } catch (error) {
-      console.error('Failed to sync metadata to SCXML:', error);
-    }
-  }, [scxmlContent, onSCXMLChange]);
 
   // Update node styles based on simulation state
   const nodesWithSimulationState = useMemo(() => {

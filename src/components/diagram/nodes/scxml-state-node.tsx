@@ -20,7 +20,7 @@ export interface VisualStyles {
 
 export interface SCXMLStateNodeData {
   label: string;
-  stateType: 'simple' | 'compound' | 'final' | 'parallel';
+  stateType: 'simple' | 'compound' | 'final' | 'parallel' | 'history';
   isInitial?: boolean;
   isActive?: boolean;
   entryActions?: string[];
@@ -175,7 +175,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         console.log(`Node ${label} height change:`, {
           height: data.height,
           width: data.width,
-          nodeId: data.label
+          nodeId: data.label,
         });
       }
     }, [data.height, data.width, label, data.label]);
@@ -226,7 +226,10 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
           overflow: 'visible',
           // Ensure fixed dimensions when specified
           ...(data.width && { minWidth: data.width, maxWidth: data.width }),
-          ...(data.height && { minHeight: data.height, maxHeight: data.height }),
+          ...(data.height && {
+            minHeight: data.height,
+            maxHeight: data.height,
+          }),
         }}
       >
         {/* Dynamic connection handles based on actual node dimensions */}
