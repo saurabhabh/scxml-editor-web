@@ -45,7 +45,6 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
       () => ({
         navigateToLine: (line: number, column?: number) => {
           if (editorRef.current) {
-            debugger;
             editorRef.current.revealLine(line);
             editorRef.current.setPosition({
               lineNumber: line,
@@ -126,8 +125,11 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
             // No need to register again to avoid duplicates
 
             // Store reference to beforeMount disposable for cleanup
-            const beforeMountDisposable = (window as any).__scxmlBeforeMountDisposable;
-            const disposables = beforeMountDisposable ? [beforeMountDisposable] : [];
+            const beforeMountDisposable = (window as any)
+              .__scxmlBeforeMountDisposable;
+            const disposables = beforeMountDisposable
+              ? [beforeMountDisposable]
+              : [];
 
             // Store disposables on editor for cleanup
             (editor as any)._scxmlDisposables = disposables;
@@ -183,9 +185,6 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
                 editor.trigger('', 'editor.action.triggerSuggest', {});
               },
             });
-
-
-            console.log('✅ SCXML Editor setup complete - Using beforeMount completion provider!');
           } catch (error) {
             console.error('❌ Error setting up SCXML editor:', error);
           }
@@ -206,19 +205,21 @@ export const XMLEditor = forwardRef<XMLEditorRef, XMLEditorProps>(
           '@/lib/monaco/scxml-language'
         );
         setupSCXMLLanguageSupport(monaco);
-        
+
         // Register enhanced completion provider once in beforeMount
         const { createEnhancedSCXMLCompletionProvider } = await import(
           '@/lib/monaco/enhanced-scxml-completion'
         );
 
-        const beforeMountProvider = createEnhancedSCXMLCompletionProvider(monaco);
+        const beforeMountProvider =
+          createEnhancedSCXMLCompletionProvider(monaco);
 
         // Register only for XML language to avoid duplicates
-        const beforeXmlDisposable = monaco.languages.registerCompletionItemProvider(
-          'xml',
-          beforeMountProvider
-        );
+        const beforeXmlDisposable =
+          monaco.languages.registerCompletionItemProvider(
+            'xml',
+            beforeMountProvider
+          );
 
         // Store for cleanup
         (window as any).__scxmlBeforeMountDisposable = beforeXmlDisposable;

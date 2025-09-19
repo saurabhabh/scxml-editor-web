@@ -2,7 +2,7 @@ import type {
   Rectangle,
   ChildPosition,
   LayoutStrategy,
-  HierarchicalNode
+  HierarchicalNode,
 } from '@/types/hierarchical-node';
 
 export interface LayoutOptions {
@@ -40,7 +40,11 @@ export class ContainerLayoutManager {
       case 'force':
         return this.arrangeWithForces(parentBounds, children, layoutOptions);
       case 'manual':
-        return this.preserveManualPositions(parentBounds, children, layoutOptions);
+        return this.preserveManualPositions(
+          parentBounds,
+          children,
+          layoutOptions
+        );
       default:
         return this.arrangeAuto(parentBounds, children, layoutOptions);
     }
@@ -57,20 +61,20 @@ export class ContainerLayoutManager {
     if (children.length === 0) return [];
 
     const { padding, spacing, columns = 2 } = options;
-    const availableWidth = parentBounds.width - (padding * 2);
-    const availableHeight = parentBounds.height - (padding * 2);
+    const availableWidth = parentBounds.width - padding * 2;
+    const availableHeight = parentBounds.height - padding * 2;
 
     const rows = Math.ceil(children.length / columns);
-    const cellWidth = (availableWidth - (spacing.x * (columns - 1))) / columns;
-    const cellHeight = (availableHeight - (spacing.y * (rows - 1))) / rows;
+    const cellWidth = (availableWidth - spacing.x * (columns - 1)) / columns;
+    const cellHeight = (availableHeight - spacing.y * (rows - 1)) / rows;
 
     return children.map((child, index) => {
       const row = Math.floor(index / columns);
       const col = index % columns;
 
       // Return positions relative to parent bounds (not absolute)
-      const x = padding + (col * (cellWidth + spacing.x));
-      const y = padding + (row * (cellHeight + spacing.y));
+      const x = padding + col * (cellWidth + spacing.x);
+      const y = padding + row * (cellHeight + spacing.y);
 
       return {
         id: child.id,
@@ -95,20 +99,27 @@ export class ContainerLayoutManager {
     const { padding, spacing } = options;
 
     // Analyze children to determine optimal layout
-    const containerChildren = children.filter(child =>
-      child.childIds && child.childIds.length > 0
+    const containerChildren = children.filter(
+      (child) => child.childIds && child.childIds.length > 0
     );
-    const simpleChildren = children.filter(child =>
-      !child.childIds || child.childIds.length === 0
+    const simpleChildren = children.filter(
+      (child) => !child.childIds || child.childIds.length === 0
     );
-
-    console.log(`🎯 Auto-arranging ${children.length} children: ${containerChildren.length} containers, ${simpleChildren.length} simple`);
 
     // For mixed content, use different strategies
     if (containerChildren.length > 0 && simpleChildren.length > 0) {
-      return this.arrangeMixedContent(parentBounds, containerChildren, simpleChildren, options);
+      return this.arrangeMixedContent(
+        parentBounds,
+        containerChildren,
+        simpleChildren,
+        options
+      );
     } else if (containerChildren.length > 0) {
-      return this.arrangeContainersOnly(parentBounds, containerChildren, options);
+      return this.arrangeContainersOnly(
+        parentBounds,
+        containerChildren,
+        options
+      );
     } else {
       return this.arrangeSimpleStates(parentBounds, simpleChildren, options);
     }
@@ -138,7 +149,7 @@ export class ContainerLayoutManager {
         x: (parentBounds.width - containerWidth) / 2, // Center containers
         y: currentY,
         width: containerWidth,
-        height: containerHeight
+        height: containerHeight,
       });
 
       currentY += containerHeight + spacing.y;
@@ -151,7 +162,7 @@ export class ContainerLayoutManager {
           x: 0,
           y: currentY,
           width: parentBounds.width,
-          height: parentBounds.height - currentY
+          height: parentBounds.height - currentY,
         },
         simpleStates,
         options
@@ -175,24 +186,30 @@ export class ContainerLayoutManager {
 
     if (containers.length === 1) {
       const container = containers[0];
-      const width = Math.max(200, parentBounds.width - (padding * 2));
+      const width = Math.max(200, parentBounds.width - padding * 2);
       const height = this.calculateContainerHeight(container);
 
-      return [{
-        id: container.id,
-        x: padding,
-        y: padding,
-        width,
-        height
-      }];
+      return [
+        {
+          id: container.id,
+          x: padding,
+          y: padding,
+          width,
+          height,
+        },
+      ];
     }
 
     // Multiple containers - arrange vertically with spacing
     const positions: ChildPosition[] = [];
     let currentY = padding;
 
-    containers.forEach(container => {
-      const width = Math.max(180, (parentBounds.width - (padding * 2) - spacing.x) / Math.min(2, containers.length));
+    containers.forEach((container) => {
+      const width = Math.max(
+        180,
+        (parentBounds.width - padding * 2 - spacing.x) /
+          Math.min(2, containers.length)
+      );
       const height = this.calculateContainerHeight(container);
 
       positions.push({
@@ -200,7 +217,7 @@ export class ContainerLayoutManager {
         x: padding,
         y: currentY,
         width,
-        height
+        height,
       });
 
       currentY += height + spacing.y;
@@ -221,8 +238,36 @@ export class ContainerLayoutManager {
     const columns = Math.min(3, Math.ceil(Math.sqrt(simpleStates.length)));
     return this.arrangeInGrid(parentBounds, simpleStates, {
       ...options,
-      columns
+      columns,
     });
+  }
+
+  /**
+   * Arrange simple states in a compact horizontal layout when space is constrained
+   */
+  private arrangeSimpleStatesCompact(
+    parentBounds: Rectangle,
+    simpleStates: HierarchicalNode[],
+    options: LayoutOptions
+  ): ChildPosition[] {
+    if (simpleStates.length === 0) return [];
+
+    const { padding, spacing } = options;
+    const availableWidth = parentBounds.width - padding * 2;
+    const stateWidth = Math.max(
+      100,
+      (availableWidth - spacing.x * (simpleStates.length - 1)) /
+        simpleStates.length
+    );
+    const stateHeight = Math.min(60, parentBounds.height - 10); // Compact height
+
+    return simpleStates.map((state, index) => ({
+      id: state.id,
+      x: padding + index * (stateWidth + spacing.x),
+      y: parentBounds.y + 5, // Small offset from top
+      width: stateWidth,
+      height: stateHeight,
+    }));
   }
 
   /**
@@ -234,12 +279,21 @@ export class ContainerLayoutManager {
 
     if (childCount === 0) return baseHeight;
 
-    // Estimate height based on child count and whether they're containers
+    // More intelligent height calculation based on child types
+    // For parallel states (like Engines), we need more vertical space for children
+    if (container.type === 'scxmlCompound' && childCount > 2) {
+      const childrenPerRow = Math.min(2, childCount);
+      const rows = Math.ceil(childCount / childrenPerRow);
+      const childHeight = 70; // Height per child row for complex containers
+      return baseHeight + rows * childHeight + 30; // Extra padding for complex layouts
+    }
+
+    // For simpler containers
     const childrenPerRow = 2;
     const rows = Math.ceil(childCount / childrenPerRow);
     const childHeight = 60; // Height per child row
 
-    return baseHeight + (rows * childHeight) + 20; // Extra padding
+    return baseHeight + rows * childHeight + 20; // Extra padding
   }
 
   /**
@@ -254,13 +308,15 @@ export class ContainerLayoutManager {
     const childWidth = 140;
     const childHeight = 80;
 
-    return [{
-      id: child.id,
-      x: (parentBounds.width - childWidth) / 2,
-      y: (parentBounds.height - childHeight) / 2,
-      width: childWidth,
-      height: childHeight,
-    }];
+    return [
+      {
+        id: child.id,
+        x: (parentBounds.width - childWidth) / 2,
+        y: (parentBounds.height - childHeight) / 2,
+        width: childWidth,
+        height: childHeight,
+      },
+    ];
   }
 
   /**
@@ -272,13 +328,13 @@ export class ContainerLayoutManager {
     options: LayoutOptions
   ): ChildPosition[] {
     const { padding, spacing } = options;
-    const availableWidth = parentBounds.width - (padding * 2) - spacing.x;
+    const availableWidth = parentBounds.width - padding * 2 - spacing.x;
     const childWidth = availableWidth / 2;
     const childHeight = 80;
 
     return children.map((child, index) => ({
       id: child.id,
-      x: padding + (index * (childWidth + spacing.x)),
+      x: padding + index * (childWidth + spacing.x),
       y: (parentBounds.height - childHeight) / 2,
       width: Math.max(120, childWidth),
       height: childHeight,
@@ -302,7 +358,8 @@ export class ContainerLayoutManager {
       const topX = (parentBounds.width - childWidth) / 2;
       const topY = padding;
       const bottomY = parentBounds.height - childHeight - padding;
-      const bottomSpacing = (parentBounds.width - (2 * childWidth) - (2 * padding)) / 1;
+      const bottomSpacing =
+        (parentBounds.width - 2 * childWidth - 2 * padding) / 1;
 
       return [
         {
@@ -376,7 +433,8 @@ export class ContainerLayoutManager {
           const dy = pos2.y - pos1.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < 100) { // Min distance threshold
+          if (distance < 100) {
+            // Min distance threshold
             const force = (100 - distance) * 0.1;
             const fx = (dx / distance) * force;
             const fy = (dy / distance) * force;
@@ -390,15 +448,21 @@ export class ContainerLayoutManager {
       }
 
       // Keep positions within bounds
-      positions = positions.map(pos => ({
+      positions = positions.map((pos) => ({
         ...pos,
         x: Math.max(
           parentBounds.x + padding,
-          Math.min(parentBounds.x + parentBounds.width - pos.width - padding, pos.x)
+          Math.min(
+            parentBounds.x + parentBounds.width - pos.width - padding,
+            pos.x
+          )
         ),
         y: Math.max(
           parentBounds.y + padding,
-          Math.min(parentBounds.y + parentBounds.height - pos.height - padding, pos.y)
+          Math.min(
+            parentBounds.y + parentBounds.height - pos.height - padding,
+            pos.y
+          )
         ),
       }));
     }
@@ -416,7 +480,7 @@ export class ContainerLayoutManager {
   ): ChildPosition[] {
     const { padding } = options;
 
-    return children.map(child => {
+    return children.map((child) => {
       // Use existing position if available, otherwise use default
       const currentPos = child.position || { x: 0, y: 0 };
       const width = child.containerBounds?.width || 120;
@@ -425,11 +489,17 @@ export class ContainerLayoutManager {
       // Adjust position to be within parent bounds
       const x = Math.max(
         parentBounds.x + padding,
-        Math.min(parentBounds.x + parentBounds.width - width - padding, currentPos.x)
+        Math.min(
+          parentBounds.x + parentBounds.width - width - padding,
+          currentPos.x
+        )
       );
       const y = Math.max(
         parentBounds.y + padding,
-        Math.min(parentBounds.y + parentBounds.height - height - padding, currentPos.y)
+        Math.min(
+          parentBounds.y + parentBounds.height - height - padding,
+          currentPos.y
+        )
       );
 
       return {
@@ -459,10 +529,12 @@ export class ContainerLayoutManager {
 
     switch (strategy.type) {
       case 'grid': {
-        const columns = layoutOptions.columns || Math.ceil(Math.sqrt(children.length));
+        const columns =
+          layoutOptions.columns || Math.ceil(Math.sqrt(children.length));
         const rows = Math.ceil(children.length / columns);
-        const minWidth = (columns * 120) + ((columns - 1) * spacing.x) + (padding * 2);
-        const minHeight = (rows * 80) + ((rows - 1) * spacing.y) + (padding * 2);
+        const minWidth =
+          columns * 120 + (columns - 1) * spacing.x + padding * 2;
+        const minHeight = rows * 80 + (rows - 1) * spacing.y + padding * 2;
         return { width: minWidth, height: minHeight };
       }
       case 'auto': {
@@ -473,8 +545,9 @@ export class ContainerLayoutManager {
         } else {
           const columns = Math.ceil(Math.sqrt(children.length));
           const rows = Math.ceil(children.length / columns);
-          const minWidth = (columns * 120) + ((columns - 1) * spacing.x) + (padding * 2);
-          const minHeight = (rows * 80) + ((rows - 1) * spacing.y) + (padding * 2);
+          const minWidth =
+            columns * 120 + (columns - 1) * spacing.x + padding * 2;
+          const minHeight = rows * 80 + (rows - 1) * spacing.y + padding * 2;
           return { width: minWidth, height: minHeight };
         }
       }
@@ -495,8 +568,10 @@ export class ContainerLayoutManager {
     return (
       position.x >= containerBounds.x + padding &&
       position.y >= containerBounds.y + padding &&
-      position.x + size.width <= containerBounds.x + containerBounds.width - padding &&
-      position.y + size.height <= containerBounds.y + containerBounds.height - padding
+      position.x + size.width <=
+        containerBounds.x + containerBounds.width - padding &&
+      position.y + size.height <=
+        containerBounds.y + containerBounds.height - padding
     );
   }
 
@@ -512,11 +587,17 @@ export class ContainerLayoutManager {
     return {
       x: Math.max(
         containerBounds.x + padding,
-        Math.min(containerBounds.x + containerBounds.width - size.width - padding, position.x)
+        Math.min(
+          containerBounds.x + containerBounds.width - size.width - padding,
+          position.x
+        )
       ),
       y: Math.max(
         containerBounds.y + padding,
-        Math.min(containerBounds.y + containerBounds.height - size.height - padding, position.y)
+        Math.min(
+          containerBounds.y + containerBounds.height - size.height - padding,
+          position.y
+        )
       ),
     };
   }

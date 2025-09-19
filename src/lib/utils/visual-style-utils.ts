@@ -62,8 +62,9 @@ export function computeVisualStyles(
         styles.borderStyle = 'dashed';
         break;
       case 'parallel':
-        styles.borderColor = '#f97316'; // orange-500
-        styles.borderStyle = 'dotted';
+        styles.borderColor = '#ea580c'; // orange-600
+        styles.borderStyle = 'dashed';
+        styles.borderWidth = 3;
         break;
       default: // simple
         styles.borderColor = '#64748b'; // slate-500
@@ -88,7 +89,7 @@ export function computeVisualStyles(
           styles.backgroundColor = '#faf5ff'; // purple-50
           break;
         case 'parallel':
-          styles.backgroundColor = '#fff7ed'; // orange-50
+          styles.backgroundColor = '#fed7aa'; // orange-200 - more vibrant for parallel states
           break;
         default:
           styles.backgroundColor = '#f8fafc'; // slate-50

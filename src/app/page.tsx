@@ -123,7 +123,6 @@ export default function Home() {
     (newContent: string) => {
       // Update content from visual diagram changes
       setContent(newContent);
-      console.log('SCXML updated from diagram changes');
     },
     [setContent]
   );
@@ -255,10 +254,10 @@ export default function Home() {
       <VisualDiagram
         scxmlContent={content}
         onNodeChange={(nodes) => {
-          console.log('Nodes changed:', nodes);
+          // console.log('Nodes changed:', nodes);
         }}
         onEdgeChange={(edges) => {
-          console.log('Edges changed:', edges);
+          // console.log('Edges changed:', edges);
         }}
         onSCXMLChange={handleSCXMLChangeFromDiagram}
       />
@@ -304,9 +303,7 @@ export default function Home() {
         scxmlContent={content}
         filename={getDownloadFilename()}
         hasVisualMetadata={hasVisualMetadata(content)}
-        onExportComplete={(exportType) => {
-          console.log(`Exported SCXML as: ${exportType}`);
-        }}
+        onExportComplete={(exportType) => {}}
       />
     </>
   );

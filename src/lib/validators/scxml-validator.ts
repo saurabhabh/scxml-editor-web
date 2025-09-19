@@ -5,6 +5,7 @@ import type {
   ParallelElement,
   FinalElement,
   HistoryElement,
+  InitialElement,
   OnEntryElement,
   OnExitElement,
   DataModelElement,
@@ -1018,23 +1019,12 @@ export class SCXMLValidator {
         state.state || state.parallel || state.final || state.history;
 
       if (hasChildren) {
-        // Compound state must have initial attribute or initial state
-        if (!state['@_initial']) {
-          const hasInitialChild =
-            state.state && Array.isArray(state.state)
-              ? state.state.some(
-                  (s) => s['@_id'] && s['@_id'].includes('initial')
-                )
-              : state.state &&
-                state.state['@_id'] &&
-                state.state['@_id'].includes('initial');
-
-          if (!hasInitialChild) {
-            errors.push({
-              message: `Compound state '${state['@_id']}' must have an initial attribute or initial state`,
-              severity: 'error',
-            });
-          }
+        // Compound state must have initial attribute or initial element
+        if (!state['@_initial'] && !state.initial) {
+          errors.push({
+            message: `Compound state '${state['@_id']}' must have either an 'initial' attribute or an <initial> child element`,
+            severity: 'error',
+          });
         }
       }
 

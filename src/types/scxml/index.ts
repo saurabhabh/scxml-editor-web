@@ -19,6 +19,7 @@ export interface SCXMLElement {
 export interface StateElement {
   '@_id': string;
   '@_initial'?: string;
+  initial?: InitialElement;
   onentry?: OnEntryElement | OnEntryElement[];
   onexit?: OnExitElement | OnExitElement[];
   transition?: TransitionElement | TransitionElement[];
@@ -63,6 +64,10 @@ export interface OnEntryElement {
 
 export interface OnExitElement {
   executable?: ExecutableElement[];
+}
+
+export interface InitialElement {
+  transition: TransitionElement;
 }
 
 export interface HistoryElement {

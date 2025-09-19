@@ -172,11 +172,6 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     // Debug logging for height changes
     React.useEffect(() => {
       if (data.height) {
-        console.log(`Node ${label} height change:`, {
-          height: data.height,
-          width: data.width,
-          nodeId: data.label,
-        });
       }
     }, [data.height, data.width, label, data.label]);
 
@@ -206,9 +201,12 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
           return <Square className='h-4 w-4 text-purple-600' />;
         case 'parallel':
           return (
-            <div className='flex'>
-              <Square className='h-3 w-3 text-orange-600' />
-              <Square className='h-3 w-3 text-orange-600 -ml-1' />
+            <div className='flex items-center space-x-1'>
+              <div className='flex'>
+                <Square className='h-3 w-3 text-orange-600 fill-orange-200' />
+                <Square className='h-3 w-3 text-orange-600 fill-orange-200 -ml-1' />
+              </div>
+              <span className='text-xs text-orange-700 font-bold'>⚡</span>
             </div>
           );
         default:

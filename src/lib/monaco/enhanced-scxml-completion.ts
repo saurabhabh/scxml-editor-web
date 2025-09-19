@@ -694,10 +694,7 @@ function createAttributeSuggestions(
   monaco: typeof import('monaco-editor'),
   context: CompletionContext
 ): monaco.languages.CompletionItem[] {
-  console.log('🔧 Creating attribute suggestions for:', context.currentElement);
-
   if (!context.currentElement) {
-    console.log('❌ No current element found');
     return [];
   }
 

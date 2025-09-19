@@ -34,18 +34,13 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       const parser = new SCXMLParser();
       const converter = new SCXMLToXStateConverter();
 
-      console.log('Parsing SCXML content...');
       const parseResult = parser.parse(scxmlContent);
-      console.log('Parse result:', parseResult);
 
       if (parseResult.success && parseResult.data) {
-        console.log('Creating XState machine...');
         const config = converter.convertToXState(parseResult.data);
-        console.log('XState config:', config);
 
         // Create a simple machine for now
         const machine = createMachine(config);
-        console.log('XState machine created:', machine);
 
         setError(null);
         return machine;
@@ -87,14 +82,12 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       const newActor = createActor(machine);
 
       newActor.subscribe((state) => {
-        console.log('State changed:', state.value);
         const stateValue =
           typeof state.value === 'string'
             ? state.value
             : typeof state.value === 'object' && state.value
             ? Object.keys(state.value)[0]
             : '';
-        console.log('Current state:', stateValue);
         setCurrentState(stateValue);
         onStateChange?.(stateValue);
       });
@@ -162,7 +155,6 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   const handleStep = useCallback(() => {
     // For now, this is a placeholder
     // In a full implementation, this would step through the state machine
-    console.log('Step forward not yet implemented');
   }, []);
 
   return (

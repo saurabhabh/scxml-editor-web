@@ -23,6 +23,7 @@ import {
 import 'reactflow/dist/style.css';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
 import { CompoundStateNode } from './nodes/compound-state-node';
+import { HistoryWrapperNode } from './nodes/history-wrapper-node';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { SimulationControls } from '../simulation';
 import { SCXMLParser } from '@/lib/parsers/scxml-parser';
@@ -55,6 +56,7 @@ interface VisualDiagramProps {
 const nodeTypes: NodeTypes = {
   scxmlState: SCXMLStateNode,
   scxmlCompound: CompoundStateNode,
+  scxmlHistory: HistoryWrapperNode,
 };
 
 // Custom edge types for SCXML transitions
@@ -160,12 +162,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             // Serialize updated SCXML
             const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
             onSCXMLChange(updatedSCXML);
-            console.log(
-              'Synced label change to SCXML:',
-              nodeId,
-              '->',
-              newLabel
-            );
           }
         }
       } catch (error) {
@@ -193,7 +189,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
             const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
             onSCXMLChange(updatedSCXML);
-            console.log('Synced actions change to SCXML:', nodeId);
           }
         }
       } catch (error) {
@@ -219,12 +214,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
             const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
             onSCXMLChange(updatedSCXML);
-            console.log(
-              'Synced state type change to SCXML:',
-              nodeId,
-              '->',
-              newStateType
-            );
           }
         }
       } catch (error) {
@@ -237,20 +226,15 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   // Handle container expand/collapse
   const handleChildrenToggle = React.useCallback(
     (nodeId: string, isExpanded: boolean) => {
-      console.log(`Container ${nodeId} toggle: ${isExpanded}`);
       // TODO: Optionally sync this state to visual metadata/SCXML
     },
     []
   );
 
   // Handle adding new child to a container
-  const handleChildAdd = React.useCallback(
-    (parentId: string) => {
-      console.log(`Adding child to container: ${parentId}`);
-      // TODO: Implement child state creation
-    },
-    []
-  );
+  const handleChildAdd = React.useCallback((parentId: string) => {
+    // TODO: Implement child state creation
+  }, []);
 
   // Parse SCXML first to get initial data
   const parsedData = useMemo(() => {
@@ -309,6 +293,24 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               };
             }
           }
+          // Special handling for history wrapper nodes - preserve their calculated size
+          if (
+            nodeUpdate.type === 'scxmlHistory' &&
+            node.data?.isHistoryWrapper
+          ) {
+            const calculatedWidth =
+              (node.data as any).width || node.style?.width;
+            const calculatedHeight =
+              (node.data as any).height || node.style?.height;
+
+            if (calculatedWidth && calculatedHeight) {
+              nodeUpdate.style = {
+                ...nodeUpdate.style,
+                width: calculatedWidth,
+                height: calculatedHeight,
+              };
+            }
+          }
 
           // Compute visual styles and pass to node data
           const visualStyles = computeVisualStyles(
@@ -319,9 +321,23 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           nodeUpdate.data = {
             ...nodeUpdate.data,
             visualStyles,
-            // Add dimensions from visual metadata
-            width: visualMetadata?.layout?.width,
-            height: visualMetadata?.layout?.height,
+            // Add dimensions from visual metadata OR preserve calculated dimensions for history wrappers
+            width:
+              nodeUpdate.type === 'scxmlHistory' && node.data?.isHistoryWrapper
+                ? (function () {
+                    const w =
+                      nodeUpdate.style?.width || (node.data as any).width;
+                    return w;
+                  })()
+                : visualMetadata?.layout?.width,
+            height:
+              nodeUpdate.type === 'scxmlHistory' && node.data?.isHistoryWrapper
+                ? (function () {
+                    const h =
+                      nodeUpdate.style?.height || (node.data as any).height;
+                    return h;
+                  })()
+                : visualMetadata?.layout?.height,
             // Add editing callbacks
             onLabelChange: (newLabel: string) =>
               handleNodeLabelChange(node.id, newLabel),
@@ -330,8 +346,12 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             onActionsChange: (entryActions: string[], exitActions: string[]) =>
               handleNodeActionsChange(node.id, entryActions, exitActions),
             // Add container-specific callbacks for compound nodes
-            onChildrenToggle: nodeUpdate.type === 'scxmlCompound' ? handleChildrenToggle : undefined,
-            onChildAdd: nodeUpdate.type === 'scxmlCompound' ? handleChildAdd : undefined,
+            onChildrenToggle:
+              nodeUpdate.type === 'scxmlCompound'
+                ? handleChildrenToggle
+                : undefined,
+            onChildAdd:
+              nodeUpdate.type === 'scxmlCompound' ? handleChildAdd : undefined,
           };
 
           return nodeUpdate;
@@ -407,12 +427,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           return edgeUpdate;
         });
 
-        console.log(
-          'Parsed SCXML - Nodes:',
-          enhancedNodes.length,
-          'Edges:',
-          edgesWithMarkers.length
-        );
         return {
           nodes: enhancedNodes,
           edges: edgesWithMarkers,
@@ -427,7 +441,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     }
 
     // Fallback to demo data if parsing fails
-    console.log('Using fallback demo data');
     return {
       nodes: initialNodes,
       edges: initialEdges,
@@ -447,37 +460,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
   const handleNodePositionChange = React.useCallback(
     (nodeId: string, x: number, y: number) => {
-      console.log('🎯 === handleNodePositionChange called ===');
-      console.log('🎯 nodeId:', nodeId, 'x:', x, 'y:', y);
-      console.log('🎯 parserRef.current:', !!parserRef.current);
-      console.log(
-        '🎯 metadataManagerRef.current:',
-        !!metadataManagerRef.current
-      );
-      console.log('🎯 onSCXMLChange:', !!onSCXMLChange);
-
       if (!parserRef.current || !metadataManagerRef.current || !onSCXMLChange) {
-        console.log('Early return: missing required refs');
         return;
       }
 
       try {
-        console.log('🎯 Updating metadata manager...');
-
         // Get existing metadata to preserve width and height
         const existingMetadata =
           metadataManagerRef.current.getVisualMetadata(nodeId);
-        console.log('🎯 Existing metadata:', existingMetadata);
         const existingWidth = existingMetadata?.layout?.width || 120; // Default width
         const existingHeight = existingMetadata?.layout?.height || 60; // Default height
-
-        console.log('🎯 About to update with:', {
-          nodeId,
-          x,
-          y,
-          width: existingWidth,
-          height: existingHeight,
-        });
 
         // Update the metadata manager's internal store
         metadataManagerRef.current.updateVisualMetadata(nodeId, {
@@ -488,65 +480,30 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             height: existingHeight,
           },
         });
-        console.log('🎯 Metadata manager updated');
 
         // Get the current metadata to verify it was stored
         const metadata = metadataManagerRef.current.getVisualMetadata(nodeId);
-        console.log('Retrieved metadata after update:', metadata);
-
-        // Check all stored metadata
-        console.log('All stored metadata:');
-        ['red', 'green', 'yellow'].forEach((id) => {
-          const meta = metadataManagerRef.current?.getVisualMetadata(id);
-          console.log(`  ${id}:`, meta?.layout);
-        });
-
-        // Instead of re-parsing, use the existing parsed data and just serialize with updated metadata
-        console.log(
-          'Using existing parsed data and serializing with updated metadata...'
-        );
 
         // Get the existing parsed data from the ref
         if (scxmlDocRef.current) {
-          console.log('🎯 Serializing with visual metadata...');
           const updatedSCXML = parserRef.current.serialize(
             scxmlDocRef.current,
             true
           );
-          console.log('🎯 Serialized SCXML length:', updatedSCXML.length);
-          console.log(
-            '🎯 Updated SCXML preview:',
-            updatedSCXML.substring(0, 800)
-          );
 
           // Check if the viz:xywh attribute is in the serialized XML
           const hasVizXywh = updatedSCXML.includes('viz:xywh');
-          console.log('🎯 Serialized XML contains viz:xywh:', hasVizXywh);
 
           if (hasVizXywh) {
             const xywh = updatedSCXML.match(/viz:xywh="[^"]*"/g);
-            console.log('🎯 Found viz:xywh attributes:', xywh);
           }
 
-          console.log('🎯 Calling onSCXMLChange...');
           onSCXMLChange(updatedSCXML);
-          console.log('🎯 onSCXMLChange called successfully');
 
           // Force edge update after node position change to fix connection points
-          console.log('🎯 Forcing edge update...');
           setTimeout(() => {
             setEdges((edges) => [...edges]);
           }, 10); // Small delay to ensure node update is complete
-
-          console.log(
-            '✅ Synced position change to SCXML via metadata manager:',
-            nodeId,
-            '->',
-            {
-              x,
-              y,
-            }
-          );
         } else {
           console.error('No parsed SCXML data available in ref');
         }
@@ -614,7 +571,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
             const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
             onSCXMLChange(updatedSCXML);
-            console.log('Added transition to SCXML:', sourceId, '->', targetId);
           }
         }
       } catch (error) {
@@ -657,57 +613,24 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   // Notify parent component of node changes
   const handleNodesChange = useCallback(
     (changes: any[]) => {
-      console.log('=== handleNodesChange called ===');
-      console.log('changes:', changes);
-
       // Apply changes to ReactFlow nodes first
       const updatedNodes = applyNodeChanges(changes, nodes);
       setNodes(updatedNodes);
-
-      console.log('Applied changes, updated nodes:', updatedNodes.length);
 
       // Extract position updates when dragging ends
       const positionChanges = changes.filter(
         (change) => change.type === 'position' && !change.dragging
       );
 
-      console.log('Position changes found:', positionChanges.length);
-      console.log('Position changes details:', positionChanges);
-
       if (positionChanges.length > 0) {
-        console.log('Processing position changes...');
         // Update visual metadata for moved nodes using the updated node positions
         positionChanges.forEach((change) => {
-          console.log('Processing change for node:', change.id);
           const updatedNode = updatedNodes.find(
             (node) => node.id === change.id
           );
-          console.log(
-            'Found updated node:',
-            !!updatedNode,
-            updatedNode?.position
-          );
 
           if (updatedNode && updatedNode.position) {
-            console.log(
-              'Node position after drag:',
-              updatedNode.id,
-              updatedNode.position
-            );
-
             // Update SCXML with new position immediately
-            console.log('Calling handleNodePositionChange...');
-            console.log('POSITION UPDATE:', {
-              nodeId: change.id,
-              oldPosition: nodes.find((n) => n.id === change.id)?.position,
-              newPosition: updatedNode.position,
-              deltaX:
-                updatedNode.position.x -
-                (nodes.find((n) => n.id === change.id)?.position.x || 0),
-              deltaY:
-                updatedNode.position.y -
-                (nodes.find((n) => n.id === change.id)?.position.y || 0),
-            });
 
             handleNodePositionChange(
               change.id,

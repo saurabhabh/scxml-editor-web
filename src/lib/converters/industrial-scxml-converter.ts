@@ -154,9 +154,6 @@ export class IndustrialSCXMLConverter {
     // Phase 4: Validate complex scenarios
     this.validateComplexScenarios(config);
 
-    console.log(
-      `🏭 Industrial conversion complete: ${this.stateRegistry.size} states, max nesting: ${this.maxNestingLevel}`
-    );
     return config;
   }
 
@@ -308,12 +305,6 @@ export class IndustrialSCXMLConverter {
       classification,
     });
 
-    console.log(
-      `📍 Analyzed state: ${stateId} at level ${nestingLevel} (parent: ${
-        parentPath || 'root'
-      })`
-    );
-
     // Recursively analyze children
     this.performDeepAnalysis(state, fullPath, nestingLevel + 1);
   }
@@ -350,8 +341,6 @@ export class IndustrialSCXMLConverter {
 
     // Analyze parallel regions
     this.analyzeParallelRegions(parallel, parallelId, nestingLevel);
-
-    console.log(`⚡ Analyzed parallel: ${parallelId} at level ${nestingLevel}`);
 
     // Recursively analyze children
     this.performDeepAnalysis(parallel, fullPath, nestingLevel + 1);
@@ -406,10 +395,6 @@ export class IndustrialSCXMLConverter {
     };
 
     this.historyStateMap.set(historyId, historyInfo);
-
-    console.log(
-      `📜 Analyzed history: ${historyId} (${historyType}) covering ${historyInfo.coveredStates.length} states`
-    );
   }
 
   /**
@@ -447,12 +432,6 @@ export class IndustrialSCXMLConverter {
       // Detect cross-hierarchy transitions
       if (classification.isCrossHierarchy) {
         this.crossHierarchyTransitions.add(transitionId);
-        console.log(
-          `🔀 Cross-hierarchy transition detected: ${sourceStateId} -> ${this.getAttribute(
-            transition,
-            'target'
-          )}`
-        );
       }
     }
   }
@@ -659,12 +638,6 @@ export class IndustrialSCXMLConverter {
       if (stateInfo) {
         stateInfo.classification.isParallelRegion = true;
       }
-
-      console.log(
-        `🔀 Parallel region identified: ${regionId} in parallel ${parallelId} at level ${
-          nestingLevel + 1
-        }`
-      );
     }
 
     // Update sibling region information for all regions
@@ -708,13 +681,6 @@ export class IndustrialSCXMLConverter {
         for (const nestedParallel of nestedParallelsArray) {
           const nestedParallelId = this.getAttribute(nestedParallel, 'id');
           if (nestedParallelId) {
-            console.log(
-              `⚡⚡ Nested parallel detected: ${nestedParallelId} within region ${this.getAttribute(
-                region,
-                'id'
-              )} (level ${currentLevel})`
-            );
-
             // Recursively analyze the nested parallel
             this.analyzeParallelRegions(
               nestedParallel,
@@ -822,10 +788,6 @@ export class IndustrialSCXMLConverter {
       parallelId,
       new Set([parallelId]),
       level
-    );
-
-    console.log(
-      `✅ Parallel structure validated: ${parallelId} with ${regions.length} regions at level ${level}`
     );
   }
 
@@ -943,10 +905,6 @@ export class IndustrialSCXMLConverter {
     event: string,
     currentActiveStates: Set<string>
   ): Map<string, Set<string>> {
-    console.log(
-      `📡 Distributing event '${event}' to all active parallel regions...`
-    );
-
     const eventDistribution = new Map<string, Set<string>>();
     const processedRegions = new Set<string>();
 
@@ -974,10 +932,6 @@ export class IndustrialSCXMLConverter {
         distributionResult.affectedRegions.forEach((regionId) =>
           processedRegions.add(regionId)
         );
-
-        console.log(
-          `   ⚡ Parallel ${parallelId}: event sent to ${distributionResult.affectedRegions.size} regions`
-        );
       }
     }
 
@@ -986,10 +940,6 @@ export class IndustrialSCXMLConverter {
       event,
       eventDistribution,
       currentActiveStates
-    );
-
-    console.log(
-      `✅ Event '${event}' distributed to ${eventDistribution.size} parallel states`
     );
     return eventDistribution;
   }
@@ -1038,10 +988,6 @@ export class IndustrialSCXMLConverter {
           regionInfo.activeStates.clear();
           regionActiveStates.forEach((stateId) =>
             regionInfo.activeStates.add(stateId)
-          );
-
-          console.log(
-            `     📍 Region ${regionInfo.regionId}: ${regionActiveStates.size} active states can handle '${event}'`
           );
         }
       }
@@ -1095,9 +1041,6 @@ export class IndustrialSCXMLConverter {
     );
 
     if (totalRegionsHandled === 0) {
-      console.log(
-        `🔼 Event '${event}' not handled by any parallel region, bubbling up...`
-      );
       this.handleEventBubbling(event, currentActiveStates);
     }
 
@@ -1126,7 +1069,6 @@ export class IndustrialSCXMLConverter {
     for (const stateId of nonParallelActiveStates) {
       const stateInfo = this.stateRegistry.get(stateId);
       if (stateInfo && this.canStateHandleEvent(stateId, event)) {
-        console.log(`🔼 Event '${event}' bubbled to state '${stateId}'`);
         break; // First state that can handle it takes precedence
       }
     }
@@ -1159,10 +1101,6 @@ export class IndustrialSCXMLConverter {
     const synchronizationEvents = ['sync', 'coordinate', 'barrier'];
 
     if (synchronizationEvents.some((syncEvent) => event.includes(syncEvent))) {
-      console.log(
-        `🤝 Handling cross-region synchronization for event '${event}'`
-      );
-
       // Ensure all regions in each parallel state receive the event
       for (const [parallelId, handledRegions] of eventDistribution.entries()) {
         const allRegions = Array.from(this.parallelRegionMap.values()).filter(
@@ -1174,10 +1112,6 @@ export class IndustrialSCXMLConverter {
         );
 
         if (unhandledRegions.length > 0) {
-          console.log(
-            `   🔄 Synchronizing ${unhandledRegions.length} additional regions in ${parallelId}`
-          );
-
           for (const region of unhandledRegions) {
             handledRegions.add(region.regionId);
           }
@@ -1201,10 +1135,6 @@ export class IndustrialSCXMLConverter {
         );
 
         if (conflictingTransitions.length > 1) {
-          console.log(
-            `⚔️ Resolving transition conflict in region ${regionId} for event '${event}': ${conflictingTransitions.length} candidates`
-          );
-
           // Apply resolution rules:
           // 1. Transitions with conditions take precedence over event-only
           // 2. More specific transitions (deeper nesting) take precedence
@@ -1212,14 +1142,6 @@ export class IndustrialSCXMLConverter {
           const resolvedTransition = this.selectPreferredTransition(
             conflictingTransitions
           );
-
-          if (resolvedTransition) {
-            console.log(
-              `   ✅ Selected transition: ${
-                resolvedTransition.sourceStateId
-              } -> ${this.getAttribute(resolvedTransition.element, 'target')}`
-            );
-          }
         }
       }
     }
@@ -1283,10 +1205,6 @@ export class IndustrialSCXMLConverter {
       const regionStates = this.getStatesInRegion(regionId, newActiveStates);
       regionInfo.activeStates = regionStates;
     }
-
-    console.log(
-      `🔄 Updated state configuration: ${newActiveStates.size} active states`
-    );
   }
 
   /**
@@ -1363,12 +1281,6 @@ export class IndustrialSCXMLConverter {
       // Deep history covers all descendant states within the parent scope
       coveredStates.push(...this.getAllDescendantStates(parentPath));
     }
-
-    console.log(
-      `📜 History ${this.getAttribute(history, 'id')} (${historyType}) covers ${
-        coveredStates.length
-      } states`
-    );
     return coveredStates;
   }
 
@@ -1407,8 +1319,6 @@ export class IndustrialSCXMLConverter {
    * Enhanced history state analysis with complex combination support
    */
   private analyzeComplexHistoryCombinations(): void {
-    console.log('🧠 Analyzing complex history state combinations...');
-
     // Find all history states and analyze their interactions
     const historyStates = Array.from(this.historyStateMap.values());
 
@@ -1488,14 +1398,6 @@ export class IndustrialSCXMLConverter {
           );
 
           if (ancestorHistories.length > 0) {
-            console.log(
-              `🔗 History inheritance detected: ${
-                historyInfo.historyId
-              } inherits from ${ancestorHistories
-                .map((h) => h.historyId)
-                .join(', ')}`
-            );
-
             // Check for inheritance conflicts
             this.checkHistoryInheritanceConflicts(
               historyInfo,
@@ -1519,10 +1421,6 @@ export class IndustrialSCXMLConverter {
     });
 
     if (parallelRegionHistories.length > 0) {
-      console.log(
-        `⚡📜 Found ${parallelRegionHistories.length} history states in parallel regions`
-      );
-
       // Group by parallel parent
       const parallelGroups = new Map<string, HistoryStateInfo[]>();
 
@@ -1590,15 +1488,8 @@ export class IndustrialSCXMLConverter {
     );
 
     if (deepHistories.length > 0 && shallowHistories.length > 0) {
-      console.log(
-        `🔧 Resolving history type conflict in scope '${scope}': promoting shallow to deep`
-      );
-
       // Deep history takes precedence - update shallow histories
       for (const shallowHistory of shallowHistories) {
-        console.log(
-          `📈 Promoting ${shallowHistory.historyId} from shallow to deep`
-        );
         shallowHistory.historyType = 'deep';
         shallowHistory.coveredStates = this.getAllDescendantStates(scope);
 
@@ -1671,10 +1562,6 @@ export class IndustrialSCXMLConverter {
     parallelId: string,
     histories: HistoryStateInfo[]
   ): void {
-    console.log(
-      `🔄 Analyzing parallel history coordination for ${parallelId}: ${histories.length} histories`
-    );
-
     // Check if all regions have history states
     const parallelRegions = Array.from(this.parallelRegionMap.values()).filter(
       (region) => region.parentParallelId === parallelId
@@ -1749,16 +1636,10 @@ export class IndustrialSCXMLConverter {
     const hist2Depth = this.calculateHistoryDepth(hist2);
 
     if (hist1Depth > hist2Depth) {
-      console.log(
-        `🔧 Resolving overlap: ${hist1.historyId} (depth ${hist1Depth}) takes precedence over ${hist2.historyId} (depth ${hist2Depth})`
-      );
       hist2.coveredStates = hist2.coveredStates.filter(
         (state) => !overlap.includes(state)
       );
     } else if (hist2Depth > hist1Depth) {
-      console.log(
-        `🔧 Resolving overlap: ${hist2.historyId} (depth ${hist2Depth}) takes precedence over ${hist1.historyId} (depth ${hist1Depth})`
-      );
       hist1.coveredStates = hist1.coveredStates.filter(
         (state) => !overlap.includes(state)
       );
@@ -1794,21 +1675,11 @@ export class IndustrialSCXMLConverter {
     // Pattern 1: All regions have same history type
     const types = new Set(histories.map((h) => h.historyType));
     if (types.size === 1) {
-      console.log(
-        `✅ Coordinated history pattern in ${parallelId}: all regions use ${
-          Array.from(types)[0]
-        } history`
-      );
     }
 
     // Pattern 2: Default targets form a dependency chain
     const targetChain = this.buildHistoryTargetChain(histories);
     if (targetChain.length > 1) {
-      console.log(
-        `🔗 History target chain detected in ${parallelId}: ${targetChain.join(
-          ' -> '
-        )}`
-      );
     }
 
     // Pattern 3: Mutual history dependencies
@@ -1904,9 +1775,6 @@ export class IndustrialSCXMLConverter {
     const historyInfo = this.historyStateMap.get(historyId);
     if (historyInfo) {
       historyInfo.hasStoredConfiguration = hasConfiguration;
-      console.log(
-        `📜 Updated history ${historyId} configuration availability: ${hasConfiguration}`
-      );
     }
   }
 
@@ -2086,8 +1954,6 @@ export class IndustrialSCXMLConverter {
    * Enhanced cross-hierarchy transition resolution
    */
   private resolveCrossHierarchyTransitions(): void {
-    console.log('🔀 Resolving cross-hierarchy transitions...');
-
     for (const [
       transitionId,
       transitionInfo,
@@ -2096,10 +1962,6 @@ export class IndustrialSCXMLConverter {
         this.resolveCrossHierarchyTransition(transitionId, transitionInfo);
       }
     }
-
-    console.log(
-      `✅ Resolved ${this.crossHierarchyTransitions.size} cross-hierarchy transitions`
-    );
   }
 
   /**
@@ -2129,14 +1991,6 @@ export class IndustrialSCXMLConverter {
       sourceInfo,
       targetInfo
     );
-
-    console.log(
-      `🔀 Cross-hierarchy transition: ${sourceStateId} -> ${targetStateId}`
-    );
-    console.log(`   Scope: ${transitionScope.commonAncestor || 'root'}`);
-    console.log(`   Exit states: ${transitionScope.exitStates.join(', ')}`);
-    console.log(`   Enter states: ${transitionScope.enterStates.join(', ')}`);
-
     // Validate the transition is legal
     const validationResult =
       this.validateCrossHierarchyTransition(transitionScope);
@@ -2294,10 +2148,6 @@ export class IndustrialSCXMLConverter {
 
     if (sourceParallelRegion && targetParallelRegion) {
       if (sourceParallelRegion !== targetParallelRegion) {
-        console.log(
-          `🔀 Transition crosses parallel regions: ${sourceParallelRegion} -> ${targetParallelRegion}`
-        );
-
         // Handle sibling region coordination
         this.coordinateParallelRegionTransition(
           sourceParallelRegion,
@@ -2326,10 +2176,6 @@ export class IndustrialSCXMLConverter {
         );
 
         for (const historyInfo of historyStates) {
-          // Store current configuration for history
-          console.log(
-            `📜 Storing configuration for history ${historyInfo.historyId} before exit`
-          );
           this.storeHistoryConfiguration(historyInfo, scope);
         }
       }
@@ -2375,27 +2221,6 @@ export class IndustrialSCXMLConverter {
     const targetRegionInfo = this.parallelRegionMap.get(targetRegion);
 
     if (!sourceRegionInfo || !targetRegionInfo) return;
-
-    // Check if regions are siblings (same parallel parent)
-    if (
-      sourceRegionInfo.parentParallelId === targetRegionInfo.parentParallelId
-    ) {
-      console.log(
-        `↔️ Coordinating sibling region transition: ${sourceRegion} -> ${targetRegion}`
-      );
-
-      // Sibling region transition - other regions continue executing
-      for (const siblingRegion of sourceRegionInfo.siblingRegions) {
-        if (siblingRegion !== targetRegion) {
-          console.log(`   Sibling region ${siblingRegion} continues execution`);
-        }
-      }
-    } else {
-      console.log(
-        `⚡ Complex parallel region transition: ${sourceRegion} -> ${targetRegion}`
-      );
-      // More complex transition between different parallel hierarchies
-    }
   }
 
   /**
@@ -2419,11 +2244,6 @@ export class IndustrialSCXMLConverter {
     );
 
     if (activeStatesToStore.length > 0) {
-      console.log(
-        `📜 Storing history configuration for ${
-          historyInfo.historyId
-        }: ${activeStatesToStore.join(', ')}`
-      );
       historyInfo.hasStoredConfiguration = true;
 
       // In a real implementation, you would store the actual configuration
@@ -2476,7 +2296,6 @@ export class IndustrialSCXMLConverter {
 
   private validateComplexScenarios(config: XStateMachineConfig): void {
     // Implementation for complex scenario validation
-    console.log('🔍 Validating complex scenarios...');
   }
 
   /**
@@ -3261,10 +3080,6 @@ export class IndustrialSCXMLConverter {
    * Apply intelligent layout algorithm to optimize node and edge positioning
    */
   private applyIntelligentLayout(nodes: Node[], edges: Edge[]): void {
-    console.log(
-      `📐 Applying intelligent layout to ${nodes.length} nodes and ${edges.length} edges`
-    );
-
     // Phase 1: Group nodes by hierarchy level
     const levelGroups = this.groupNodesByLevel(nodes);
 
@@ -3279,8 +3094,6 @@ export class IndustrialSCXMLConverter {
 
     // Phase 5: Final positioning adjustments
     this.applyFinalLayoutAdjustments(nodes);
-
-    console.log(`✅ Intelligent layout applied successfully`);
   }
 
   /**
@@ -3338,8 +3151,6 @@ export class IndustrialSCXMLConverter {
    * Minimize edge crossings through node repositioning
    */
   private minimizeEdgeCrossings(nodes: Node[], edges: Edge[]): void {
-    console.log(`🔀 Optimizing ${edges.length} edges to minimize crossings...`);
-
     // Create adjacency map for faster lookups
     const adjacencyMap = new Map<string, string[]>();
     for (const edge of edges) {
@@ -3416,8 +3227,6 @@ export class IndustrialSCXMLConverter {
    * Optimize layout for parallel regions
    */
   private optimizeParallelRegionLayout(nodes: Node[]): void {
-    console.log(`⚡ Optimizing parallel region layouts...`);
-
     const parallelNodes = nodes.filter((node) => node.data.isParallel);
 
     for (const parallelNode of parallelNodes) {
@@ -3463,8 +3272,6 @@ export class IndustrialSCXMLConverter {
    * Apply final layout adjustments for polish
    */
   private applyFinalLayoutAdjustments(nodes: Node[]): void {
-    console.log(`✨ Applying final layout adjustments...`);
-
     // Ensure minimum spacing between nodes
     this.enforceMinimumSpacing(nodes);
 
