@@ -1,17 +1,13 @@
 'use client';
 
-import React, { memo, useCallback, useMemo } from 'react';
-import { Handle, Position, type NodeProps, useReactFlow } from 'reactflow';
-import { Square, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import {
-  visualStylesToCSS,
   getAdditionalClasses,
+  visualStylesToCSS,
 } from '@/lib/utils/visual-style-utils';
-import type {
-  CompoundStateNodeData,
-  HierarchicalNode,
-} from '@/types/hierarchical-node';
-import type { VisualStyles } from './scxml-state-node';
+import type { CompoundStateNodeData } from '@/types/hierarchical-node';
+import { ChevronDown, ChevronRight, Plus, Square } from 'lucide-react';
+import React, { memo, useCallback, useMemo } from 'react';
+import { Handle, Position, useReactFlow, type NodeProps } from 'reactflow';
 import { ChildStateNode } from './child-state-node';
 
 export interface CompoundStateNodeProps
@@ -19,6 +15,78 @@ export interface CompoundStateNodeProps
   onChildrenToggle?: (nodeId: string, isExpanded: boolean) => void;
   onChildAdd?: (parentId: string) => void;
 }
+
+// Helper component to recursively render child nodes
+const RenderChildNode = ({
+  childId,
+  childLayout,
+  descendants,
+}: {
+  childId: string;
+  childLayout: any;
+  descendants: any[];
+}) => {
+  const node = descendants.find((d) => d.id === childId);
+  if (!node) return null;
+
+  const isContainer = childLayout.type === 'container';
+  const { x, y, width, height, children: nestedLayouts } = childLayout;
+
+  if (isContainer) {
+    // Render container with its children
+    return (
+      <div
+        className='absolute border-2 border-dashed border-purple-300 bg-purple-50/80 rounded-lg'
+        style={{ left: x, top: y, width, height }}
+      >
+        {/* Container header */}
+        <div className='p-2 bg-white/90 border-b border-purple-200 rounded-t-lg'>
+          <div className='flex items-center space-x-2'>
+            <Square className='h-3 w-3 text-purple-600' />
+            <span className='text-sm font-semibold text-gray-900'>
+              {node.data.label}
+            </span>
+            <span className='text-xs uppercase tracking-wide font-medium px-2 py-1 rounded-full bg-purple-100 text-purple-700'>
+              {node.data.stateType}
+            </span>
+          </div>
+        </div>
+
+        {/* Container children */}
+        <div className='p-2 relative'>
+          {Object.entries(nestedLayouts || {}).map(
+            ([nestedId, nestedLayout]: [string, any]) => (
+              <RenderChildNode
+                key={nestedId}
+                childId={nestedId}
+                childLayout={{
+                  ...nestedLayout,
+                  // Positions are relative to parent container, no need to adjust
+                  x: nestedLayout.x,
+                  y: nestedLayout.y,
+                }}
+                descendants={descendants}
+              />
+            )
+          )}
+        </div>
+      </div>
+    );
+  } else {
+    // Render simple state
+    return (
+      <ChildStateNode
+        key={node.id}
+        node={node}
+        position={{ x, y }}
+        size={{ width, height }}
+        isActive={node.data.isActive}
+        onClick={(nodeId) => console.log('Child clicked:', nodeId)}
+        onDoubleClick={(nodeId) => console.log('Child double-clicked:', nodeId)}
+      />
+    );
+  }
+};
 
 export const CompoundStateNode = memo<CompoundStateNodeProps>(
   ({ data, selected, id, onChildrenToggle, onChildAdd }) => {
@@ -40,7 +108,7 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       onActionsChange,
       isEditing = false,
     } = data;
-
+    console.log('descendants', descendants);
     const [editingLabel, setEditingLabel] = React.useState(false);
     const [tempLabel, setTempLabel] = React.useState(label);
 
@@ -74,9 +142,164 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       lastContentHashRef.current = contentHash;
     }
 
+    // Helper function to recursively calculate layout for containers and their children
+    const calculateHierarchicalLayout = useCallback(
+      (nodeId: string, availableNodes: any[], depth: number = 0): any => {
+        const directChildren = availableNodes.filter(
+          (n) => n.parentId === nodeId
+        );
+
+        if (directChildren.length === 0) {
+          return {
+            width: 200,
+            height: 100,
+            childLayouts: {},
+          };
+        }
+
+        // Separate containers and simple states
+        const containers = directChildren.filter(
+          (c) => c.childIds && c.childIds.length > 0
+        );
+        const simpleStates = directChildren.filter(
+          (c) => !c.childIds || c.childIds.length === 0
+        );
+
+        const childLayouts: Record<string, any> = {};
+        let maxWidth = 0;
+        let currentY = 10; // Start with padding from top
+
+        // First, layout all container children compactly
+        if (containers.length > 0) {
+          // Use single row for 1-2 containers, 2 columns for 3+
+          const cols = containers.length <= 2 ? containers.length : 2;
+          const rows = Math.ceil(containers.length / cols);
+
+          // Pre-calculate all container sizes
+          const containerSizes = containers.map((container) => {
+            const childLayout = calculateHierarchicalLayout(
+              container.id,
+              availableNodes,
+              depth + 1
+            );
+            return {
+              container,
+              childLayout,
+              width: Math.max(200, childLayout.width + 30),
+              height: Math.max(140, childLayout.height + 50),
+            };
+          });
+
+          for (let row = 0; row < rows; row++) {
+            let rowMaxHeight = 0;
+            let currentX = 10; // Start X position for this row
+
+            for (let col = 0; col < cols; col++) {
+              const idx = row * cols + col;
+              if (idx >= containers.length) break;
+
+              const {
+                container,
+                childLayout,
+                width: containerWidth,
+                height: containerHeight,
+              } = containerSizes[idx];
+
+              // Position containers compactly, one after another
+              const x = currentX;
+              const y = currentY;
+
+              childLayouts[container.id] = {
+                x,
+                y,
+                width: containerWidth,
+                height: containerHeight,
+                children: childLayout.childLayouts,
+                type: 'container',
+              };
+
+              // Move X position for next container
+              currentX += containerWidth + 15; // Just add the width plus small gap
+              rowMaxHeight = Math.max(rowMaxHeight, containerHeight);
+            }
+
+            maxWidth = Math.max(maxWidth, currentX);
+            currentY += rowMaxHeight + 15;
+          }
+        }
+
+        // Then layout simple states compactly below containers
+        if (simpleStates.length > 0) {
+          // Determine optimal column count based on number of states
+          const cols =
+            simpleStates.length <= 3
+              ? simpleStates.length
+              : simpleStates.length <= 6
+              ? 3
+              : 4;
+          const rows = Math.ceil(simpleStates.length / cols);
+
+          // Calculate each state's width individually
+          const stateWidths = simpleStates.map((s) =>
+            Math.max(120, (s.data.label || '').length * 8 + 30)
+          );
+          const stateHeight = 50;
+
+          let stateIndex = 0;
+          for (let row = 0; row < rows; row++) {
+            let currentX = 10; // Start position for each row
+
+            for (
+              let col = 0;
+              col < cols && stateIndex < simpleStates.length;
+              col++
+            ) {
+              const state = simpleStates[stateIndex];
+              const stateWidth = stateWidths[stateIndex];
+
+              childLayouts[state.id] = {
+                x: currentX,
+                y: currentY,
+                width: stateWidth,
+                height: stateHeight,
+                children: {},
+                type: 'simple',
+              };
+
+              currentX += stateWidth + 10; // Move to next position
+              stateIndex++;
+            }
+
+            maxWidth = Math.max(maxWidth, currentX);
+            currentY += stateHeight + 10;
+          }
+        }
+
+        return {
+          width: Math.max(200, maxWidth),
+          height: Math.max(100, currentY + 10),
+          childLayouts,
+        };
+      },
+      []
+    );
+
+    // Calculate the full layout for this container and its children
+    const layout = useMemo(() => {
+      if (!isExpanded || descendants.length === 0) {
+        return {
+          width: minSize.width,
+          height: minSize.height,
+          childLayouts: {},
+        };
+      }
+      return calculateHierarchicalLayout(id, descendants);
+    }, [id, descendants, isExpanded, minSize, calculateHierarchicalLayout]);
+
     // Calculate container size dynamically based on content
     const containerSize = useMemo(() => {
       // Debug logging
+      debugger;
 
       // Priority 1: Use cached dimensions (prevents resize during drag)
       if (cachedDimensionsRef.current) {
@@ -97,144 +320,12 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       let requiredWidth = minSize.width;
       let requiredHeight = minSize.height;
 
-      if (isExpanded && descendants.length > 0) {
-        const directChildren = descendants.filter((d) => d.parentId === id);
-
-        // Analyze children to determine layout requirements
-        const containerChildren = directChildren.filter(
-          (child) => child.childIds && child.childIds.length > 0
-        );
-        const simpleChildren = directChildren.filter(
-          (child) => !child.childIds || child.childIds.length === 0
-        );
-
-        // Calculate the actual bounding box needed for all children
-        let maxX = 0;
-        let maxY = 0;
-
-        // Calculate positions and sizes for container children
-        const isParallelParent = data.stateType === 'parallel';
-        let currentRowY = 10;
-        let currentRowMaxHeight = 0;
-        let currentRowX = 20;
-        // Improved layout for parallel states - better spacing
-        const maxContainersPerRow = isParallelParent
-          ? Math.min(3, containerChildren.length)
-          : 1;
-
-        const containerSpacing = isParallelParent ? 30 : 25; // More space for parallel states
-
-        containerChildren.forEach((container, index) => {
-          const containerChildrenCount = container.childIds?.length || 0;
-
-          // Calculate container size based on actual children dimensions
-          const labelWidth = (container.data.label || '').length * 8 + 60;
-
-          // Get actual grandchildren to calculate real dimensions needed
-          const childIds = container.childIds || [];
-          // Get actual grandchildren to calculate real dimensions needed
-          const grandChildren = descendants.filter((gc) =>
-            childIds.includes(gc.parentId || '')
-          );
-          let childrenWidth = 200; // minimum
-          let childrenHeight = 120; // minimum
-
-          if (grandChildren.length > 0) {
-            // Calculate the actual space needed for grandchildren layout
-            const grandChildColumns = Math.max(2, grandChildren.length);
-            const grandChildRows = Math.ceil(
-              grandChildren.length / grandChildColumns
-            );
-
-            // Calculate max width needed per column
-            let maxWidthPerColumn = 0;
-            grandChildren.forEach((grandChild) => {
-              const grandChildLabelWidth =
-                (grandChild.data.label || '').length * 8 + 40;
-              const grandChildWidth = Math.max(120, grandChildLabelWidth);
-              maxWidthPerColumn = Math.max(maxWidthPerColumn, grandChildWidth);
-            });
-
-            // Total width = columns * maxWidth + spacing
-            childrenWidth =
-              grandChildColumns * maxWidthPerColumn +
-              (grandChildColumns - 1) * 15 +
-              100; // padding
-            // Total height = rows * height + spacing + header
-            childrenHeight =
-              80 + grandChildRows * 60 + (grandChildRows - 1) * 15 + 20; // header + rows + spacing + padding
-          }
-
-          const containerWidth = Math.max(320, labelWidth, childrenWidth);
-          const containerHeight = Math.max(220, childrenHeight);
-
-          // Calculate container position
-          let containerX, containerY;
-
-          if (
-            maxContainersPerRow > 1 &&
-            index % maxContainersPerRow === 0 &&
-            index > 0
-          ) {
-            // Start new row
-            currentRowY += currentRowMaxHeight + 25;
-            currentRowX = 20;
-            currentRowMaxHeight = 0;
-          }
-
-          containerX = currentRowX;
-          containerY = currentRowY;
-
-          // Update for next container in row
-          currentRowX += containerWidth + containerSpacing;
-          currentRowMaxHeight = Math.max(currentRowMaxHeight, containerHeight);
-
-          // Update max bounds with better padding for parallel states
-          const rightPadding = isParallelParent ? 30 : 20;
-          const bottomPadding = isParallelParent ? 35 : 25;
-          maxX = Math.max(maxX, containerX + containerWidth + rightPadding);
-          maxY = Math.max(maxY, containerY + containerHeight + bottomPadding);
-
-          // CRITICAL FIX: Update the descendant's position with calculated values
-          container.position = { x: containerX, y: containerY };
-        });
-
-        // Calculate positions and sizes for simple children
-        if (simpleChildren.length > 0) {
-          // Position simple children below containers
-          const containerOffset =
-            currentRowY +
-            currentRowMaxHeight +
-            (containerChildren.length > 0 ? 25 : 0);
-          const columns = Math.min(2, simpleChildren.length);
-
-          simpleChildren.forEach((child, index) => {
-            const row = Math.floor(index / columns);
-            const col = index % columns;
-
-            // Calculate child size based on label
-            const labelWidth = (child.data.label || '').length * 8 + 40;
-            const childWidth = Math.max(140, labelWidth);
-            const childHeight = 80;
-
-            // Calculate child position
-            const childX = 20 + col * (childWidth + 25);
-            const childY = containerOffset + 20 + row * 125;
-
-            // Update max bounds
-            maxX = Math.max(maxX, childX + childWidth + 20); // Add right margin
-            maxY = Math.max(maxY, childY + childHeight + 25); // Add bottom margin
-
-            // CRITICAL FIX: Update the simple child's position with calculated values
-            child.position = { x: childX, y: childY };
-          });
-        }
-
-        // Set required dimensions based on actual content bounds
-        requiredWidth = Math.max(requiredWidth, maxX + padding);
+      if (isExpanded && layout) {
+        // Use the pre-calculated layout
+        requiredWidth = Math.max(requiredWidth, layout.width);
         requiredHeight = Math.max(
           requiredHeight,
-          headerHeight + maxY + padding
+          headerHeight + statusBarHeight + layout.height
         );
       } else if (isExpanded) {
         // Default expanded size with space for add child button
@@ -248,8 +339,8 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       }
 
       const finalSize = {
-        width: Math.max(minSize.width, requiredWidth),
-        height: Math.max(minSize.height, requiredHeight),
+        width: Math.max(minSize.width, requiredWidth + 30),
+        height: Math.max(minSize.height, requiredHeight + 30),
       };
 
       // Cache calculated dimensions for future use (prevents recalculation during drag)
@@ -514,7 +605,21 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
                 {/* Status bar showing child count */}
                 <div className='text-xs text-gray-600 font-medium mb-3 px-2'>
                   Child States (
-                  {descendants.filter((d) => d.parentId === id).length})
+                  {
+                    descendants.filter((d) => {
+                      const isDirectChildByParentId = d.parentId === id;
+                      const isDirectChildByArray =
+                        children?.includes(d.id) &&
+                        !descendants.some(
+                          (sibling) =>
+                            sibling.id !== id &&
+                            sibling.parentId === id &&
+                            sibling.childIds?.includes(d.id)
+                        );
+                      return isDirectChildByParentId || isDirectChildByArray;
+                    }).length
+                  }
+                  )
                 </div>
 
                 {/* Visual child nodes container */}
@@ -522,475 +627,16 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
                   className='relative w-full h-full overflow-visible'
                   style={{ minHeight: '200px' }}
                 >
-                  {descendants
-                    .filter((descendant) => descendant.parentId === id) // Only render direct children
-                    .map((descendant, index) => {
-                      // Use the position calculated by the layout algorithm
-                      // These should already be relative to the parent container
-                      let nodeX = descendant.position?.x || 0;
-                      let nodeY = descendant.position?.y || 0;
-                      debugger;
-                      // Calculate smart positioning if not provided
-                      if (nodeX === 0 && nodeY === 0) {
-                        // Get all direct children for layout calculation
-                        const directChildren = descendants.filter(
-                          (d) => d.parentId === id
-                        );
-                        const containerChildren = directChildren.filter(
-                          (child) => child.childIds && child.childIds.length > 0
-                        );
-                        const simpleChildren = directChildren.filter(
-                          (child) =>
-                            !child.childIds || child.childIds.length === 0
-                        );
-
-                        const isContainer =
-                          descendant.childIds && descendant.childIds.length > 0;
-
-                        if (isContainer) {
-                          // Containers positioning (matches size calculation logic)
-                          const containerIndex = containerChildren.findIndex(
-                            (c) => c.id === descendant.id
-                          );
-
-                          const isParallelParent =
-                            data.stateType === 'parallel';
-                          const maxContainersPerRow = isParallelParent
-                            ? Math.min(3, containerChildren.length)
-                            : 1;
-
-                          if (maxContainersPerRow > 1) {
-                            // Improved side by side layout for parallel containers
-                            const row = Math.floor(
-                              containerIndex / maxContainersPerRow
-                            );
-                            const col = containerIndex % maxContainersPerRow;
-                            const containerWidth = Math.max(
-                              340,
-                              (descendant.data.label || '').length * 8 + 80
-                            );
-
-                            nodeX = 20 + col * (containerWidth + 30);
-                            nodeY = 10 + row * 270; // Increased vertical spacing
-                          } else {
-                            // Vertical stacking for compound containers
-                            nodeX = 20;
-                            nodeY = 10 + containerIndex * 250;
-                          }
-                        } else {
-                          // Simple states arranged in grid below containers
-                          const simpleIndex = simpleChildren.findIndex(
-                            (s) => s.id === descendant.id
-                          );
-
-                          // Calculate container offset based on actual layout
-                          const isParallelParent =
-                            data.stateType === 'parallel';
-                          const maxContainersPerRow = isParallelParent
-                            ? Math.min(3, containerChildren.length)
-                            : 1;
-                          const containerRows = Math.ceil(
-                            containerChildren.length / maxContainersPerRow
-                          );
-                          const containerOffset =
-                            containerRows > 0 ? 10 + containerRows * 250 : 10;
-
-                          const columns = Math.min(2, simpleChildren.length);
-                          const row = Math.floor(simpleIndex / columns);
-                          const col = simpleIndex % columns;
-
-                          // Calculate width based on label to avoid overlap
-                          const labelWidth =
-                            (descendant.data.label || '').length * 8 + 40;
-                          const nodeWidth = Math.max(140, labelWidth);
-
-                          nodeX = 20 + col * (nodeWidth + 25);
-                          nodeY = containerOffset + 20 + row * 125;
-                        }
-                      }
-
-                      // Determine size dynamically based on node type and content
-                      let nodeWidth = (descendant.data as any).width || 300;
-                      let nodeHeight = (descendant.data as any).height || 60;
-
-                      // For containers, calculate size based on actual children dimensions
-                      if (
-                        descendant.childIds &&
-                        descendant.childIds.length > 0
-                      ) {
-                        const labelWidth =
-                          (descendant.data.label || '').length * 8 + 60;
-
-                        const childIds = descendant.childIds;
-                        // Get actual grandchildren to calculate real dimensions needed
-                        const grandChildren = descendants.filter((gc) =>
-                          childIds.includes(gc.parentId || '')
-                        );
-                        let childrenWidth = 200;
-                        let childrenHeight = 120;
-
-                        if (grandChildren.length > 0) {
-                          const grandChildColumns = Math.max(
-                            2,
-                            grandChildren.length
-                          );
-                          const grandChildRows = Math.ceil(
-                            grandChildren.length / grandChildColumns
-                          );
-
-                          // Calculate max width needed per column
-                          let maxWidthPerColumn = 0;
-                          grandChildren.forEach((grandChild) => {
-                            const grandChildLabelWidth =
-                              (grandChild.data.label || '').length * 8 + 40;
-                            const grandChildWidth = Math.max(
-                              120,
-                              grandChildLabelWidth
-                            );
-                            maxWidthPerColumn = Math.max(
-                              maxWidthPerColumn,
-                              grandChildWidth
-                            );
-                          });
-
-                          childrenWidth =
-                            grandChildColumns * maxWidthPerColumn +
-                            (grandChildColumns - 1) * 15 +
-                            120;
-                          childrenHeight =
-                            80 +
-                            grandChildRows * 60 +
-                            (grandChildRows + 1) * 15 +
-                            140;
-                        }
-
-                        nodeWidth = Math.max(320, labelWidth, childrenWidth);
-                        nodeHeight = Math.max(220, childrenHeight);
-                      } else {
-                        // Simple states with better sizing
-                        const labelWidth =
-                          (descendant.data.label || '').length * 8 + 40;
-                        nodeWidth = Math.max(140, labelWidth);
-                        nodeHeight = 80;
-                      }
-
-                      // For nested containers, we need to handle them specially
-                      const isNestedContainer =
-                        descendant.childIds && descendant.childIds.length > 0;
-
-                      return (
-                        <div key={descendant.id}>
-                          {isNestedContainer ? (
-                            // Render nested container with its children
-                            <div
-                              className='absolute border-2 border-dashed border-purple-300 bg-purple-50/80 rounded-lg'
-                              style={{
-                                left: nodeX,
-                                top: nodeY,
-                                width: nodeWidth,
-                                height: nodeHeight,
-                              }}
-                            >
-                              <div className='p-2 bg-white/90 border-b border-purple-200 rounded-t-lg'>
-                                <div className='flex items-center space-x-2'>
-                                  <Square className='h-3 w-3 text-purple-600' />
-                                  <span className='text-sm font-semibold text-gray-900'>
-                                    {descendant.data.label}
-                                  </span>
-                                  <span className='text-xs uppercase tracking-wide font-medium px-2 py-1 rounded-full bg-purple-100 text-purple-700'>
-                                    {descendant.data.stateType}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className='p-2 flex-1 relative'>
-                                <div className='text-xs text-gray-600 mb-1'>
-                                  {descendant?.childIds?.length} child states
-                                </div>
-                                {/* Render nested children recursively */}
-                                <div className='relative'>
-                                  {descendants
-                                    .filter(
-                                      (child) =>
-                                        child.parentId === descendant.id
-                                    )
-                                    .map((nestedChild, nestedIndex) => {
-                                      const nestedChildren = descendants.filter(
-                                        (child) =>
-                                          child.parentId === descendant.id
-                                      );
-                                      const columns = Math.min(
-                                        2,
-                                        nestedChildren.length
-                                      );
-                                      const row = Math.floor(
-                                        nestedIndex / columns
-                                      );
-                                      const col = nestedIndex % columns;
-
-                                      // Check if this nested child is also a container
-                                      const isNestedChildContainer =
-                                        nestedChild.childIds &&
-                                        nestedChild.childIds.length > 0;
-
-                                      if (isNestedChildContainer) {
-                                        // Recursive rendering for nested containers
-                                        const containerLabelWidth =
-                                          (nestedChild.data.label || '')
-                                            .length *
-                                            8 +
-                                          60; // Increased multiplier and padding
-
-                                        // Calculate space needed for children
-                                        const childrenSpaceNeeded = descendants
-                                          .filter(
-                                            (gc) =>
-                                              gc.parentId === nestedChild.id
-                                          )
-                                          .reduce((maxWidth, grandChild) => {
-                                            const grandChildLabelWidth =
-                                              (grandChild.data.label || '')
-                                                .length *
-                                                8 +
-                                              40;
-                                            const grandChildWidth = Math.max(
-                                              120,
-                                              grandChildLabelWidth
-                                            );
-                                            return Math.max(
-                                              maxWidth,
-                                              grandChildWidth
-                                            );
-                                          }, 0);
-
-                                        const nestedContainerWidth = Math.max(
-                                          250, // Increased minimum width
-                                          containerLabelWidth,
-                                          childrenSpaceNeeded * 2 + 60, // Space for 2 columns + padding
-                                          180 +
-                                            (nestedChild?.childIds?.length ||
-                                              1) *
-                                              30 // More space per child
-                                        );
-                                        const nestedContainerHeight = Math.max(
-                                          180, // Increased minimum height
-                                          120 +
-                                            Math.ceil(
-                                              (nestedChild?.childIds?.length ||
-                                                1) / 2
-                                            ) *
-                                              70 // Increased spacing between rows
-                                        );
-
-                                        const childX =
-                                          5 + col * (nestedContainerWidth + 25); // Increased spacing between containers
-                                        const childY =
-                                          20 +
-                                          row * (nestedContainerHeight + 25); // Increased vertical spacing
-
-                                        return (
-                                          <div
-                                            key={nestedChild.id}
-                                            className='absolute border-2 border-dashed border-indigo-300 bg-indigo-50/80 rounded-lg'
-                                            style={{
-                                              left: childX,
-                                              top: childY,
-                                              width: nestedContainerWidth,
-                                              height: nestedContainerHeight,
-                                            }}
-                                          >
-                                            <div className='p-1.5 bg-white/90 border-b border-indigo-200 rounded-t-lg'>
-                                              <div className='flex items-center space-x-1.5'>
-                                                <Square className='h-2.5 w-2.5 text-indigo-600' />
-                                                <span className='text-xs font-semibold text-gray-900'>
-                                                  {nestedChild.data.label}
-                                                </span>
-                                                <span className='text-xs uppercase tracking-wide font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700'>
-                                                  {nestedChild.data.stateType}
-                                                </span>
-                                              </div>
-                                            </div>
-                                            <div className='p-1.5 flex-1 relative'>
-                                              <div className='text-xs text-gray-600 mb-1'>
-                                                {nestedChild?.childIds?.length}{' '}
-                                                states
-                                              </div>
-                                              {/* Render the children of this nested container */}
-                                              <div className='relative'>
-                                                {descendants
-                                                  .filter(
-                                                    (grandChild) =>
-                                                      grandChild.parentId ===
-                                                      nestedChild.id
-                                                  )
-                                                  .map(
-                                                    (
-                                                      grandChild,
-                                                      grandIndex
-                                                    ) => {
-                                                      const grandChildren =
-                                                        descendants.filter(
-                                                          (gc) =>
-                                                            gc.parentId ===
-                                                            nestedChild.id
-                                                        );
-                                                      const grandColumns =
-                                                        Math.min(
-                                                          2,
-                                                          grandChildren.length
-                                                        );
-                                                      const grandRow =
-                                                        Math.floor(
-                                                          grandIndex /
-                                                            grandColumns
-                                                        );
-                                                      const grandCol =
-                                                        grandIndex %
-                                                        grandColumns;
-
-                                                      const grandChildLabelWidth =
-                                                        (
-                                                          grandChild.data
-                                                            .label || ''
-                                                        ).length *
-                                                          8 +
-                                                        40; // Increased multiplier and padding
-                                                      const grandChildWidth =
-                                                        Math.max(
-                                                          120, // Increased minimum width
-                                                          grandChildLabelWidth
-                                                        );
-                                                      const grandChildHeight = 60; // Increased height
-
-                                                      const grandChildX =
-                                                        5 + // Increased left margin
-                                                        grandCol *
-                                                          (grandChildWidth +
-                                                            15); // Increased spacing
-                                                      const grandChildY =
-                                                        20 + // Increased top margin
-                                                        grandRow *
-                                                          (grandChildHeight +
-                                                            15); // Increased spacing
-
-                                                      return (
-                                                        <ChildStateNode
-                                                          key={grandChild.id}
-                                                          node={grandChild}
-                                                          position={{
-                                                            x: grandChildX,
-                                                            y: grandChildY,
-                                                          }}
-                                                          size={{
-                                                            width:
-                                                              grandChildWidth,
-                                                            height:
-                                                              grandChildHeight,
-                                                          }}
-                                                          isActive={
-                                                            grandChild.data
-                                                              .isActive
-                                                          }
-                                                          onClick={(nodeId) =>
-                                                            console.log(
-                                                              'Grand child clicked:',
-                                                              nodeId
-                                                            )
-                                                          }
-                                                          onDoubleClick={(
-                                                            nodeId
-                                                          ) =>
-                                                            console.log(
-                                                              'Grand child double-clicked:',
-                                                              nodeId
-                                                            )
-                                                          }
-                                                        />
-                                                      );
-                                                    }
-                                                  )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      } else {
-                                        // Render simple states with better sizing
-                                        const nestedChildLabelWidth =
-                                          (nestedChild.data.label || '')
-                                            .length *
-                                            8 + // Increased multiplier
-                                          40; // Increased padding
-                                        const nestedChildWidth = Math.max(
-                                          140, // Increased minimum width
-                                          nestedChildLabelWidth
-                                        );
-                                        const nestedChildHeight = 80;
-
-                                        const childX =
-                                          5 + col * (nestedChildWidth + 15); // Increased spacing
-                                        const childY =
-                                          20 + row * (nestedChildHeight + 15); // Increased spacing
-
-                                        return (
-                                          <ChildStateNode
-                                            key={nestedChild.id}
-                                            node={nestedChild}
-                                            position={{
-                                              x: childX,
-                                              y: childY,
-                                            }}
-                                            size={{
-                                              width: nestedChildWidth,
-                                              height: nestedChildHeight,
-                                            }}
-                                            isActive={nestedChild.data.isActive}
-                                            onClick={(nodeId) =>
-                                              console.log(
-                                                'Nested child clicked:',
-                                                nodeId
-                                              )
-                                            }
-                                            onDoubleClick={(nodeId) =>
-                                              console.log(
-                                                'Nested child double-clicked:',
-                                                nodeId
-                                              )
-                                            }
-                                          />
-                                        );
-                                      }
-                                    })}
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            // Render simple states as ChildStateNode
-                            <ChildStateNode
-                              node={descendant}
-                              position={{
-                                x: nodeX,
-                                y: nodeY,
-                              }}
-                              size={{
-                                width: nodeWidth,
-                                height: nodeHeight,
-                              }}
-                              isActive={descendant.data.isActive}
-                              onClick={(nodeId) => {
-                                console.log('Child state clicked:', nodeId);
-                                // TODO: Handle child state selection
-                              }}
-                              onDoubleClick={(nodeId) => {
-                                console.log(
-                                  'Child state double-clicked:',
-                                  nodeId
-                                );
-                                // TODO: Handle child state editing
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
+                  {Object.entries(layout.childLayouts || {}).map(
+                    ([childId, childLayout]: [string, any]) => (
+                      <RenderChildNode
+                        key={childId}
+                        childId={childId}
+                        childLayout={childLayout}
+                        descendants={descendants}
+                      />
+                    )
+                  )}
                 </div>
               </>
             ) : (

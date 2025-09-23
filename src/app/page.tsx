@@ -12,7 +12,6 @@ import { VisualDiagram } from '@/components/diagram';
 import { Upload } from 'lucide-react';
 import { ErrorBoundary, ValidationPanel } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
-import { SCXMLToXStateConverter } from '@/lib/converters';
 import { hasVisualMetadata } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
@@ -57,7 +56,6 @@ export default function Home() {
 
   const parser = useMemo(() => new SCXMLParser(), []);
   const validator = useMemo(() => new SCXMLValidator(), []);
-  const converter = useMemo(() => new SCXMLToXStateConverter(), []);
   const editorRef = useRef<XMLEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

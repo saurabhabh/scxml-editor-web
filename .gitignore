@@ -38,11 +38,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .claude/settings.local.json
-xml/examples/fa_argon.scxml
-xml/examples/hwTest_Pressure.scxml
-xml/examples/lp_2step.scxml
-xml/examples/lp_ao_ats_oven.scxml
-xml/examples/lp_ao_hotvalves.scxml
-xml/examples/lp_fieldwrite.scxml
-xml/examples/lp_floworifices.scxml
-xml/examples/power_control.scxml
+xml/examples/*    
