@@ -1,12 +1,13 @@
 'use client';
 
 import React from 'react';
-import { BaseEdge, getBezierPath, type EdgeProps } from 'reactflow';
+import { BaseEdge, getBezierPath, type EdgeProps, MarkerType } from 'reactflow';
 
 export interface SCXMLTransitionEdgeData {
   event?: string;
   condition?: string;
   actions?: string[];
+  labelOffset?: { x: number; y: number };
 }
 
 export const SCXMLTransitionEdge: React.FC<
@@ -22,6 +23,7 @@ export const SCXMLTransitionEdge: React.FC<
   data,
   selected,
   markerEnd,
+  style,
 }) => {
   // Use getBezierPath for smooth curves instead of getStraightPath
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -37,6 +39,7 @@ export const SCXMLTransitionEdge: React.FC<
   const event = data?.event;
   const condition = data?.condition;
   const actions = data?.actions || [];
+  const labelOffset = data?.labelOffset || { x: 0, y: 0 };
 
   // Determine edge styling based on transition properties
   const getEdgeColor = () => {
@@ -69,47 +72,85 @@ export const SCXMLTransitionEdge: React.FC<
 
   const labelContent = getLabelContent();
 
+  // Define custom arrow marker with better visibility
+  const customMarkerEnd = markerEnd || {
+    type: MarkerType.ArrowClosed,
+    width: 20,
+    height: 20,
+    color: edgeColor,
+  };
+
   return (
     <>
-      <BaseEdge
-        path={edgePath}
-        markerEnd={markerEnd}
+      {/* Define SVG markers for directional arrows */}
+      <defs>
+        <marker
+          id={`arrow-${id}`}
+          viewBox="0 0 20 20"
+          refX="19"
+          refY="10"
+          markerWidth="15"
+          markerHeight="15"
+          orient="auto"
+        >
+          <path
+            d="M 2 2 L 18 10 L 2 18 L 6 10 Z"
+            fill={edgeColor}
+            stroke="none"
+          />
+        </marker>
+      </defs>
+      {/* Render path first (lower layer) */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke={edgeColor}
+        strokeWidth={strokeWidth}
+        strokeDasharray={
+          getStrokeStyle() === 'dashed'
+            ? '8,4'
+            : getStrokeStyle() === 'dotted'
+            ? '2,2'
+            : 'none'
+        }
+        markerEnd={`url(#arrow-${id})`}
+        className="react-flow__edge-path"
         style={{
-          stroke: edgeColor,
-          strokeWidth,
-          strokeDasharray:
-            getStrokeStyle() === 'dashed'
-              ? '8,4'
-              : getStrokeStyle() === 'dotted'
-              ? '2,2'
-              : 'none',
+          ...style,
+          zIndex: 1,
         }}
       />
+      {/* Render label on top (higher layer) */}
       {labelContent && (
-        <foreignObject
-          width={Math.max(labelContent.length * 7, 50)}
-          height={22}
-          x={labelX - Math.max(labelContent.length * 7, 50) / 2}
-          y={labelY - 11}
-        >
-          <div
-            className={`
-              px-2 py-1 rounded-full text-xs font-medium shadow-sm border text-center
-              ${
-                selected
-                  ? 'bg-blue-500 border-blue-600 text-white'
-                  : 'bg-gray-600 border-gray-700 text-white'
-              }
-            `}
-            style={{
-              fontSize: '10px',
-              lineHeight: '1',
-              whiteSpace: 'nowrap',
-            }}
+        <g style={{ pointerEvents: 'all', zIndex: 10000 }}>
+          <foreignObject
+            width={Math.max(labelContent.length * 8, 60)}
+            height={26}
+            x={labelX - Math.max(labelContent.length * 8, 60) / 2 + labelOffset.x}
+            y={labelY - 13 + labelOffset.y}
+            style={{ overflow: 'visible', zIndex: 10000 }}
           >
-            {labelContent}
-          </div>
-        </foreignObject>
+            <div
+              className={`
+                px-2 py-1 rounded-md text-xs font-semibold shadow-md border text-center
+                ${
+                  selected
+                    ? 'bg-blue-500 border-blue-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-800'
+                }
+              `}
+              style={{
+                fontSize: '11px',
+                lineHeight: '1.2',
+                whiteSpace: 'nowrap',
+                position: 'relative',
+                zIndex: 10000,
+              }}
+            >
+              {labelContent}
+            </div>
+          </foreignObject>
+        </g>
       )}
     </>
   );

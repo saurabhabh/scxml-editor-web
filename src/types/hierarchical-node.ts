@@ -13,7 +13,8 @@ export interface CompoundStateNodeData extends SCXMLStateNodeData {
   children: string[]; // Child state IDs
   containerMetadata: ContainerMetadata;
   childPositions?: Map<string, { x: number; y: number }>;
-  descendants?: HierarchicalNode[]; // All descendant nodes for visual rendering
+  descendants?: HierarchicalNode[]; // All descendant nodes for visual rendering (deprecated)
+  childCount?: number; // Number of child nodes (for new format)
 }
 
 export interface ParallelStateNodeData extends CompoundStateNodeData {
@@ -64,4 +65,5 @@ export interface HierarchicalLayout {
   edges: Edge[];
   hierarchy: Map<string, string[]>; // parent -> children mapping
   parentMap: Map<string, string>; // child -> parent mapping
+  datamodelContext?: Record<string, any>; // SCXML datamodel context
 }

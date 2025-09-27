@@ -108,7 +108,7 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       onActionsChange,
       isEditing = false,
     } = data;
-    console.log('descendants', descendants);
+    // console.log('descendants', descendants);
     const [editingLabel, setEditingLabel] = React.useState(false);
     const [tempLabel, setTempLabel] = React.useState(label);
 
@@ -167,7 +167,7 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
 
         const childLayouts: Record<string, any> = {};
         let maxWidth = 0;
-        let currentY = 10; // Start with padding from top
+        let currentY = 20; // Start with padding from top
 
         // First, layout all container children compactly
         if (containers.length > 0) {
@@ -185,14 +185,14 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
             return {
               container,
               childLayout,
-              width: Math.max(200, childLayout.width + 30),
-              height: Math.max(140, childLayout.height + 50),
+              width: Math.max(200, childLayout.width + 60), // More internal padding
+              height: Math.max(140, childLayout.height + 80), // More internal padding
             };
           });
 
           for (let row = 0; row < rows; row++) {
             let rowMaxHeight = 0;
-            let currentX = 10; // Start X position for this row
+            let currentX = 20; // Start X position with padding
 
             for (let col = 0; col < cols; col++) {
               const idx = row * cols + col;
@@ -218,13 +218,13 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
                 type: 'container',
               };
 
-              // Move X position for next container
-              currentX += containerWidth + 15; // Just add the width plus small gap
+              // Move X position for next container with spacing
+              currentX += containerWidth + 40; // Add width plus gap for edges
               rowMaxHeight = Math.max(rowMaxHeight, containerHeight);
             }
 
             maxWidth = Math.max(maxWidth, currentX);
-            currentY += rowMaxHeight + 15;
+            currentY += rowMaxHeight + 30; // Vertical spacing
           }
         }
 
@@ -247,7 +247,7 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
 
           let stateIndex = 0;
           for (let row = 0; row < rows; row++) {
-            let currentX = 10; // Start position for each row
+            let currentX = 20; // Start position with padding
 
             for (
               let col = 0;
@@ -266,12 +266,12 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
                 type: 'simple',
               };
 
-              currentX += stateWidth + 10; // Move to next position
+              currentX += stateWidth + 30; // Spacing between states
               stateIndex++;
             }
 
             maxWidth = Math.max(maxWidth, currentX);
-            currentY += stateHeight + 10;
+            currentY += stateHeight + 20; // Vertical spacing
           }
         }
 
@@ -298,8 +298,6 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
 
     // Calculate container size dynamically based on content
     const containerSize = useMemo(() => {
-      // Debug logging
-      debugger;
 
       // Priority 1: Use cached dimensions (prevents resize during drag)
       if (cachedDimensionsRef.current) {
@@ -339,8 +337,8 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       }
 
       const finalSize = {
-        width: Math.max(minSize.width, requiredWidth + 30),
-        height: Math.max(minSize.height, requiredHeight + 30),
+        width: Math.max(minSize.width, requiredWidth + 60), // More padding
+        height: Math.max(minSize.height, requiredHeight + 60), // More padding
       };
 
       // Cache calculated dimensions for future use (prevents recalculation during drag)
@@ -418,7 +416,7 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
       const hasHistoryWrapper =
         (data as any).historyStates && (data as any).historyStates.length > 0;
 
-      let baseClasses = 'overflow-visible isolate';
+      let baseClasses = 'overflow-visible'; // Removed 'isolate' to prevent z-index stacking context issues
 
       // Only add border if there's no history wrapper
       if (!hasHistoryWrapper) {
@@ -486,51 +484,54 @@ export const CompoundStateNode = memo<CompoundStateNodeProps>(
         style={{
           ...inlineStyles,
           position: 'relative',
-          zIndex: 1,
         }}
       >
         {/* Connection handles */}
         <Handle
           type='target'
           position={Position.Top}
+          id='top'
           style={{
             left: '50%',
-            top: '-4px',
-            transform: 'translateX(-50%)',
-            zIndex: 10,
+            top: '0',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1000, // Higher z-index for handles
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='source'
           position={Position.Bottom}
+          id='bottom'
           style={{
             left: '50%',
-            bottom: '-4px',
-            transform: 'translateX(-50%)',
-            zIndex: 10,
+            bottom: '0',
+            transform: 'translate(-50%, 50%)',
+            zIndex: 1000, // Higher z-index for handles
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='target'
           position={Position.Left}
+          id='left'
           style={{
-            left: '-4px',
+            left: '0',
             top: '50%',
-            transform: 'translateY(-50%)',
-            zIndex: 10,
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1000, // Higher z-index for handles
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
         <Handle
           type='source'
           position={Position.Right}
+          id='right'
           style={{
-            right: '-4px',
+            right: '0',
             top: '50%',
-            transform: 'translateY(-50%)',
-            zIndex: 10,
+            transform: 'translate(50%, -50%)',
+            zIndex: 1000, // Higher z-index for handles
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />

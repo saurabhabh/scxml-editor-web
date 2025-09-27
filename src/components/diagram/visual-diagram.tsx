@@ -1,7 +1,7 @@
 //visual-diagram.tsx
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -21,8 +21,14 @@ import {
   ConnectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import {
+  SmartBezierEdge,
+  SmartStepEdge,
+  SmartStraightEdge,
+  getSmartEdge,
+} from '@tisoap/react-flow-smart-edge';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
-import { CompoundStateNode } from './nodes/compound-state-node';
+import { GroupNode } from './nodes/group-node';
 import { HistoryWrapperNode } from './nodes/history-wrapper-node';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { SimulationControls } from '../simulation';
@@ -30,6 +36,7 @@ import { SCXMLParser } from '@/lib/parsers/scxml-parser';
 import { SCXMLToXStateConverter } from '@/lib/converters/scxml-to-xstate';
 import { VisualMetadataManager } from '@/lib/metadata';
 import { computeVisualStyles } from '@/lib/utils/visual-style-utils';
+import { ConditionEvaluator } from '@/lib/scxml/condition-evaluator';
 import {
   findStateById,
   updateTransitionTargets,
@@ -44,6 +51,7 @@ import {
 } from '@/lib/utils/scxml-manipulation-utils';
 import type { ElementVisualMetadata } from '@/types/visual-metadata';
 import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 interface VisualDiagramProps {
   scxmlContent: string;
@@ -55,13 +63,18 @@ interface VisualDiagramProps {
 // Custom node types for SCXML elements
 const nodeTypes: NodeTypes = {
   scxmlState: SCXMLStateNode,
-  scxmlCompound: CompoundStateNode,
+  group: GroupNode,
   scxmlHistory: HistoryWrapperNode,
 };
 
 // Custom edge types for SCXML transitions
 const edgeTypes = {
   scxmlTransition: SCXMLTransitionEdge,
+  smart: SmartBezierEdge,
+  smartStep: SmartStepEdge,
+  smartStraight: SmartStraightEdge,
+  // Using ReactFlow's built-in edge types: smoothstep, step, straight
+  // These are automatically available without explicit registration
 };
 
 // Default nodes for demo purposes
@@ -96,7 +109,7 @@ const initialNodes: Node[] = [
 const initialEdges: Edge[] = [
   {
     id: 'idle-to-active',
-    type: 'scxmlTransition',
+    type: 'aligned',
     source: 'idle',
     target: 'active',
     markerEnd: {
@@ -111,7 +124,7 @@ const initialEdges: Edge[] = [
   },
   {
     id: 'active-to-idle',
-    type: 'scxmlTransition',
+    type: 'aligned',
     source: 'active',
     target: 'idle',
     markerEnd: {
@@ -134,6 +147,37 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 }) => {
   const [currentSimulationState, setCurrentSimulationState] =
     React.useState<string>('');
+  const [transitionDisplayMode, setTransitionDisplayMode] = React.useState<
+    'all' | 'active' | 'available'
+  >('all');
+  const [activeStates, setActiveStates] = React.useState<Set<string>>(
+    new Set()
+  );
+  const [datamodelContext, setDatamodelContext] = React.useState<
+    Record<string, any>
+  >({});
+  const [deleteConfirm, setDeleteConfirm] = React.useState<{
+    isOpen: boolean;
+    nodeId: string;
+    nodeLabel: string;
+  }>({
+    isOpen: false,
+    nodeId: '',
+    nodeLabel: '',
+  });
+
+  // Flag to prevent re-parsing when updating positions
+  const isUpdatingPositionRef = React.useRef(false);
+  // Track previous SCXML content to detect real changes
+  const previousScxmlRef = React.useRef<string>('');
+  // Store the child add handler
+  const handleChildAddRef = React.useRef<((parentId: string) => void) | null>(
+    null
+  );
+  // Store the node delete handler
+  const handleNodeDeleteRef = React.useRef<((nodeId: string) => void) | null>(
+    null
+  );
 
   // Visual metadata management
   const parserRef = React.useRef<SCXMLParser | null>(null);
@@ -231,9 +275,22 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     []
   );
 
-  // Handle adding new child to a container
+  // Wrapper for handleChildAdd that uses the ref
   const handleChildAdd = React.useCallback((parentId: string) => {
-    // TODO: Implement child state creation
+    if (handleChildAddRef.current) {
+      handleChildAddRef.current(parentId);
+    } else {
+      console.log('Child add handler not yet initialized');
+    }
+  }, []);
+
+  // Wrapper for handleNodeDelete that uses the ref
+  const handleNodeDeleteWrapper = React.useCallback((nodeId: string, nodeLabel: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      nodeId,
+      nodeLabel,
+    });
   }, []);
 
   // Parse SCXML first to get initial data
@@ -263,7 +320,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         // Store the parsed SCXML document for later use
         scxmlDocRef.current = parseResult.data;
         // Convert to React Flow nodes and edges
-        const { nodes, edges } = converter.convertToReactFlow(parseResult.data);
+        const { nodes, edges, datamodelContext } = converter.convertToReactFlow(
+          parseResult.data
+        );
 
         // Enhance nodes with visual metadata if available
         const enhancedNodes = nodes.map((node) => {
@@ -345,27 +404,103 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               handleNodeStateTypeChange(node.id, newStateType),
             onActionsChange: (entryActions: string[], exitActions: string[]) =>
               handleNodeActionsChange(node.id, entryActions, exitActions),
-            // Add container-specific callbacks for compound nodes
+            onDelete: () => handleNodeDeleteWrapper(node.id, node.data?.label || node.id),
+            // Add container-specific callbacks for group nodes
             onChildrenToggle:
-              nodeUpdate.type === 'scxmlCompound'
-                ? handleChildrenToggle
-                : undefined,
+              nodeUpdate.type === 'group' ? handleChildrenToggle : undefined,
             onChildAdd:
-              nodeUpdate.type === 'scxmlCompound' ? handleChildAdd : undefined,
+              nodeUpdate.type === 'group' ? handleChildAdd : undefined,
           };
 
           return nodeUpdate;
         });
 
+        // Detect overlapping edges between same source and target
+        const edgeGroups = new Map<string, any[]>();
+        edges.forEach((edge) => {
+          const key = `${edge.source}-${edge.target}`;
+          if (!edgeGroups.has(key)) {
+            edgeGroups.set(key, []);
+          }
+          edgeGroups.get(key)!.push(edge);
+        });
+
+        // Helper to check if two nodes share the same parent
+        const haveSameParent = (sourceId: string, targetId: string) => {
+          const sourceNode = nodes.find((n) => n.id === sourceId);
+          const targetNode = nodes.find((n) => n.id === targetId);
+          return sourceNode?.parentId === targetNode?.parentId;
+        };
+
         // Enhance edges with visual metadata and ensure proper arrow markers
-        const edgesWithMarkers = edges.map((edge) => {
+        const edgesWithMarkers = edges.map((edge, index) => {
           // Try to get visual metadata for this edge (transitions)
           const edgeMetadata = metadataManager.getVisualMetadata(edge.id);
 
+          // Check for parallel edges
+          const edgeKey = `${edge.source}-${edge.target}`;
+          const parallelEdges = edgeGroups.get(edgeKey) || [];
+          const edgeIndex = parallelEdges.findIndex((e) => e.id === edge.id);
+          const hasParallelEdges = parallelEdges.length > 1;
+
+          // Check if source and target are in the same parent container
+          const inSameContainer = haveSameParent(edge.source, edge.target);
+
+          // Use appropriate edge type based on context
+          let edgeType = 'smoothstep'; // Default to smoothstep for contained edges
+
+          if (inSameContainer) {
+            // For edges within the same container, use simpler edge types
+            if (hasParallelEdges) {
+              // Use different simple edge types for parallel transitions
+              if (edgeIndex === 0) {
+                edgeType = 'smoothstep';
+              } else if (edgeIndex === 1) {
+                edgeType = 'step';
+              } else {
+                edgeType = 'straight';
+              }
+            } else {
+              // Single edge within container
+              edgeType = 'smoothstep';
+            }
+          } else {
+            // For cross-container edges, use smart edges for obstacle avoidance
+            if (hasParallelEdges) {
+              // Alternate between smart edge types for parallel transitions
+              if (edgeIndex === 0) {
+                edgeType = 'smart';
+              } else if (edgeIndex === 1) {
+                edgeType = 'smartStep';
+              } else {
+                edgeType = 'smartStraight';
+              }
+            } else {
+              edgeType = 'smart';
+            }
+          }
+
+          // Calculate offset for parallel edges to separate them visually
+          let pathOptions: any = {};
+          if (hasParallelEdges && inSameContainer) {
+            // Add offset to separate parallel edges
+            const offset = edgeIndex * 30 - (parallelEdges.length - 1) * 15;
+            pathOptions = {
+              offset,
+              borderRadius: 20 + edgeIndex * 10,
+              // For smoothstep, add curvature control
+              curvature: 0.25 + edgeIndex * 0.1,
+            };
+          }
+
           const edgeUpdate: any = {
             ...edge,
+            type: edgeType,
+            pathOptions,
             markerEnd: {
               type: MarkerType.ArrowClosed,
+              width: 20,
+              height: 20,
               color:
                 edge.data?.event && edge.data?.condition
                   ? '#2563eb'
@@ -375,6 +510,23 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
                   ? '#6b7280'
                   : '#374151',
             },
+            style: {
+              ...edge.style,
+              strokeWidth: 2,
+              zIndex: 1,
+            },
+            zIndex: 1,
+            labelStyle: {
+              fill: '#fff',
+              fontWeight: 600,
+              fontSize: 12,
+            },
+            labelBgStyle: {
+              fill: '#6b7280',
+              fillOpacity: 0.95,
+            },
+            labelBgPadding: [6, 4] as [number, number],
+            labelBgBorderRadius: 4,
           };
 
           // Apply visual metadata if available
@@ -384,6 +536,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               edgeUpdate.style = {
                 ...edgeUpdate.style,
                 stroke: edgeMetadata.style.stroke,
+                zIndex: 9999,
               };
               // Also update marker color to match stroke
               edgeUpdate.markerEnd.color = edgeMetadata.style.stroke;
@@ -393,21 +546,22 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               edgeUpdate.style = {
                 ...edgeUpdate.style,
                 strokeWidth: edgeMetadata.style.strokeWidth,
+                zIndex: 9999,
               };
             }
 
             // Apply diagram metadata (curve type, waypoints, etc.)
             if (edgeMetadata.diagram) {
               if (edgeMetadata.diagram.curveType) {
-                // Map visual curve types to ReactFlow types
+                // Map visual curve types to smart edge types
                 const curveTypeMap: Record<string, string> = {
-                  smooth: 'default',
-                  step: 'step',
-                  straight: 'straight',
-                  bezier: 'default',
+                  smooth: 'smart',
+                  step: 'smartStep',
+                  straight: 'smartStraight',
+                  bezier: 'smart',
                 };
                 edgeUpdate.type =
-                  curveTypeMap[edgeMetadata.diagram.curveType] || 'default';
+                  curveTypeMap[edgeMetadata.diagram.curveType] || 'smart';
               }
 
               // Apply waypoints if available (for future enhancement)
@@ -432,6 +586,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           edges: edgesWithMarkers,
           parser,
           metadataManager,
+          datamodelContext,
         };
       } else {
         console.warn('SCXML parsing failed:', parseResult.errors);
@@ -446,81 +601,292 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       edges: initialEdges,
       parser: null,
       metadataManager: null,
+      datamodelContext: {},
     };
   }, [scxmlContent]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(parsedData.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(parsedData.edges);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Update nodes when parsed data changes
+  // Handle node deletion - moved here after state hooks are defined
+  const handleNodeDelete = React.useCallback(
+    (nodeId: string) => {
+      if (!parserRef.current || !onSCXMLChange) return;
+
+      try {
+        const parseResult = parserRef.current.parse(scxmlContent);
+        if (parseResult.success && parseResult.data) {
+          const scxmlDoc = parseResult.data;
+
+          // Remove state from SCXML document
+          removeStateFromDocument(scxmlDoc, nodeId);
+
+          // Serialize updated SCXML
+          const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+
+          // Set flag to prevent re-parsing cycle
+          isUpdatingPositionRef.current = true;
+          previousScxmlRef.current = updatedSCXML;
+
+          // Update SCXML content
+          onSCXMLChange(updatedSCXML);
+
+          // Also remove from ReactFlow nodes immediately for visual feedback
+          setNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
+
+          // Remove edges connected to this node
+          setEdges((edges) =>
+            edges.filter(
+              (edge) => edge.source !== nodeId && edge.target !== nodeId
+            )
+          );
+
+          // Reset flag after a short delay
+          setTimeout(() => {
+            isUpdatingPositionRef.current = false;
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Failed to delete node:', error);
+      }
+    },
+    [scxmlContent, onSCXMLChange, setNodes, setEdges]
+  );
+
+  // Set the node delete handler ref
   React.useEffect(() => {
-    setNodes(parsedData.nodes);
-    setEdges(parsedData.edges);
-  }, [parsedData.nodes, parsedData.edges, setNodes, setEdges]);
+    handleNodeDeleteRef.current = handleNodeDelete;
+  }, [handleNodeDelete]);
 
-  const handleNodePositionChange = React.useCallback(
-    (nodeId: string, x: number, y: number) => {
-      if (!parserRef.current || !metadataManagerRef.current || !onSCXMLChange) {
+  // Define the actual handleChildAdd implementation
+  React.useEffect(() => {
+    handleChildAddRef.current = (parentId: string) => {
+      if (!onSCXMLChange) {
+        console.error('onSCXMLChange not available');
         return;
       }
 
       try {
-        // Get existing metadata to preserve width and height
-        const existingMetadata =
-          metadataManagerRef.current.getVisualMetadata(nodeId);
-        const existingWidth = existingMetadata?.layout?.width || 120; // Default width
-        const existingHeight = existingMetadata?.layout?.height || 60; // Default height
+        // Generate a unique ID for the new state
+        let newStateId = 'state_1';
+        let counter = 1;
+        const existingIds = new Set(nodes.map((n) => n.id));
+        while (existingIds.has(newStateId)) {
+          counter++;
+          newStateId = `state_${counter}`;
+        }
 
-        // Update the metadata manager's internal store
-        metadataManagerRef.current.updateVisualMetadata(nodeId, {
-          layout: {
-            x,
-            y,
-            width: existingWidth,
-            height: existingHeight,
-          },
-        });
+        // Get child nodes for positioning
+        const childNodes = nodes.filter((node) => node.parentId === parentId);
 
-        // Get the current metadata to verify it was stored
-        const metadata = metadataManagerRef.current.getVisualMetadata(nodeId);
+        // Calculate position using grid layout
+        let x = 50;
+        let y = 100;
 
-        // Get the existing parsed data from the ref
-        if (scxmlDocRef.current) {
-          const updatedSCXML = parserRef.current.serialize(
-            scxmlDocRef.current,
-            true
-          );
+        if (childNodes.length > 0) {
+          // Use a grid layout for positioning new states
+          const cols = 4; // Maximum 4 columns
+          const rowHeight = 120; // Height + spacing
+          const colWidth = 200; // Width + spacing
 
-          // Check if the viz:xywh attribute is in the serialized XML
-          const hasVizXywh = updatedSCXML.includes('viz:xywh');
+          // Find the next available position in the grid
+          const existingPositions = childNodes.map((n) => ({
+            col: Math.floor((n.position?.x || 0) / colWidth),
+            row: Math.floor(((n.position?.y || 0) - 100) / rowHeight),
+          }));
 
-          if (hasVizXywh) {
-            const xywh = updatedSCXML.match(/viz:xywh="[^"]*"/g);
+          // Find the next empty slot
+          let found = false;
+          for (let row = 0; row < 10 && !found; row++) {
+            for (let col = 0; col < cols && !found; col++) {
+              const occupied = existingPositions.some(
+                (p) => p.col === col && p.row === row
+              );
+              if (!occupied) {
+                x = 50 + col * colWidth;
+                y = 100 + row * rowHeight;
+                found = true;
+              }
+            }
           }
+        }
 
-          onSCXMLChange(updatedSCXML);
+        // Add a new node to ReactFlow immediately
+        const newNode = {
+          id: newStateId,
+          type: 'scxmlState',
+          position: { x, y },
+          parentId: parentId,
+          data: {
+            label: newStateId,
+            stateType: 'simple' as const,
+            onLabelChange: handleNodeLabelChange,
+            onDelete: () => handleNodeDeleteWrapper(newStateId, newStateId),
+          },
+          style: {
+            width: 160,
+            height: 80,
+          },
+        };
 
-          // Force edge update after node position change to fix connection points
-          setTimeout(() => {
-            setEdges((edges) => [...edges]);
-          }, 10); // Small delay to ensure node update is complete
-        } else {
-          console.error('No parsed SCXML data available in ref');
+        setNodes((nodes) => [...nodes, newNode]);
+
+        // Update SCXML content by adding the new state element
+        if (onSCXMLChange && scxmlContent) {
+          try {
+            // Parse the current SCXML to manipulate it
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(scxmlContent, 'text/xml');
+
+            // Find the parent element
+            const parentElement = doc.querySelector(`[id="${parentId}"]`);
+            if (parentElement) {
+              // Ensure viz namespace is declared on the root element
+              const rootElement = doc.documentElement;
+              if (!rootElement.hasAttribute('xmlns:viz')) {
+                rootElement.setAttribute('xmlns:viz', 'urn:x-thingm:viz');
+              }
+
+              // Create the new state element in the same namespace as the parent
+              // This prevents xmlns="" from being added
+              const parentNamespace = parentElement.namespaceURI;
+              const newStateElement = doc.createElementNS(
+                parentNamespace,
+                'state'
+              );
+
+              // Set the attributes
+              newStateElement.setAttribute('id', newStateId);
+              newStateElement.setAttributeNS(
+                'urn:x-thingm:viz',
+                'viz:xywh',
+                `${x},${y},160,80`
+              );
+
+              // Add to parent
+              parentElement.appendChild(newStateElement);
+
+              // Serialize back to string
+              const serializer = new XMLSerializer();
+              const updatedSCXML = serializer.serializeToString(doc);
+
+              // Update SCXML content
+              // Set flag to prevent re-parsing cycle
+              isUpdatingPositionRef.current = true;
+              previousScxmlRef.current = updatedSCXML;
+
+              onSCXMLChange(updatedSCXML);
+
+              // Reset flag after a short delay
+              setTimeout(() => {
+                isUpdatingPositionRef.current = false;
+              }, 100);
+
+              console.log('Successfully added new child state:', newStateId);
+            } else {
+              console.error('Parent element not found in SCXML:', parentId);
+            }
+          } catch (xmlError) {
+            console.error('Failed to update SCXML:', xmlError);
+          }
         }
       } catch (error) {
-        console.error('Failed to sync position change:', error);
-        console.error('Error details:', error);
+        console.error('Failed to add child state:', error);
       }
-    },
-    [scxmlContent, onSCXMLChange, setEdges]
-  );
+    };
+  }, [nodes, onSCXMLChange, handleNodeLabelChange, handleNodeDeleteWrapper, setNodes, scxmlContent]);
 
-  // Update node styles based on simulation state
-  const nodesWithSimulationState = useMemo(() => {
+  // Update datamodel context when parsed data changes
+  React.useEffect(() => {
+    if (parsedData.datamodelContext) {
+      setDatamodelContext(parsedData.datamodelContext);
+    }
+  }, [parsedData.datamodelContext]);
+
+  // Filter and evaluate edges based on display mode
+  const filteredEdges = React.useMemo(() => {
+    if (transitionDisplayMode === 'all') {
+      // Show all transitions with evaluation status
+      return edges.map((edge) => {
+        if (edge.data?.condition && datamodelContext) {
+          const evaluationResult = ConditionEvaluator.evaluateCondition(
+            edge.data.condition,
+            datamodelContext
+          );
+          return {
+            ...edge,
+            data: {
+              ...edge.data,
+              conditionEvaluated: evaluationResult,
+            },
+          };
+        }
+        return edge;
+      });
+    }
+
+    if (activeStates.size === 0) {
+      return [];
+    }
+
+    // Filter by active states
+    const fromActiveStates = edges.filter((edge) =>
+      activeStates.has(edge.source)
+    );
+
+    if (transitionDisplayMode === 'active') {
+      // Show all transitions from active states
+      return fromActiveStates.map((edge) => {
+        if (edge.data?.condition && datamodelContext) {
+          const evaluationResult = ConditionEvaluator.evaluateCondition(
+            edge.data.condition,
+            datamodelContext
+          );
+          return {
+            ...edge,
+            data: {
+              ...edge.data,
+              conditionEvaluated: evaluationResult,
+            },
+          };
+        }
+        return edge;
+      });
+    }
+
+    // 'available' mode - only show transitions with true or no conditions
+    return fromActiveStates.filter((edge) => {
+      if (!edge.data?.condition) {
+        return true; // No condition means always available
+      }
+
+      const evaluationResult = ConditionEvaluator.evaluateCondition(
+        edge.data.condition,
+        datamodelContext
+      );
+
+      // Include edge with evaluation result
+      if (evaluationResult !== false) {
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            conditionEvaluated: evaluationResult,
+          },
+        };
+      }
+
+      return evaluationResult !== false; // Show if true or null (can't evaluate)
+    });
+  }, [edges, activeStates, transitionDisplayMode, datamodelContext]);
+
+  // Enhance nodes to highlight active states
+  const enhancedNodes = React.useMemo(() => {
     return nodes.map((node) => {
-      const isActive = node.id === currentSimulationState;
+      const isActive =
+        activeStates.has(node.id) || node.id === currentSimulationState;
 
-      // Recompute visual styles when simulation state changes
+      // Recompute visual styles when active state changes
       const visualMetadata = metadataManagerRef.current?.getVisualMetadata(
         node.id
       );
@@ -538,118 +904,335 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           isActive,
           visualStyles: updatedVisualStyles,
         },
+        style: {
+          ...node.style,
+          ...(isActive
+            ? {
+                border: '3px solid #3b82f6',
+                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.3)',
+              }
+            : {}),
+        },
       };
     });
-  }, [nodes, currentSimulationState]);
+  }, [nodes, activeStates, currentSimulationState]);
+  console.log('Enhanced Nodes:', enhancedNodes);
+  // Initialize nodes and edges when SCXML content actually changes
+  React.useEffect(() => {
+    // Check if content actually changed
+    const contentChanged = scxmlContent !== previousScxmlRef.current;
 
-  // Handle adding new transitions
-  const handleTransitionAdd = React.useCallback(
-    (sourceId: string, targetId: string, event: string) => {
-      if (!parserRef.current || !onSCXMLChange) return;
+    if (contentChanged) {
+      // CRITICAL: Clear all position tracking state when SCXML content changes
+      // This prevents infinite loops after tab switches
+      if (positionUpdateTimeoutRef.current) {
+        clearTimeout(positionUpdateTimeoutRef.current);
+        positionUpdateTimeoutRef.current = null;
+      }
+      lastPositionUpdateRef.current.clear();
+
+      // Don't clear the updating flag if we're in the middle of a transition add
+      if (!isUpdatingPositionRef.current) {
+        isUpdatingPositionRef.current = false;
+      }
+
+      previousScxmlRef.current = scxmlContent;
+
+      // When content changes, use the new positions from parsedData
+      setNodes(parsedData.nodes);
+      setEdges(parsedData.edges);
+    } else if (nodes.length === 0 && parsedData.nodes.length > 0) {
+      // Initial load case - just set the nodes
+      setNodes(parsedData.nodes);
+      setEdges(parsedData.edges);
+    }
+  }, [scxmlContent, parsedData]);
+
+  const handleNodePositionChange = React.useCallback(
+    (nodeId: string, x: number, y: number) => {
+      if (!onSCXMLChange || !scxmlContent) {
+        return;
+      }
+
+      // Set flag to prevent re-parsing cycle
+      isUpdatingPositionRef.current = true;
 
       try {
-        const parseResult = parserRef.current.parse(scxmlContent);
-        if (parseResult.success && parseResult.data) {
-          const scxmlDoc = parseResult.data;
-          const sourceState = findStateById(scxmlDoc, sourceId);
+        // Parse the current SCXML content
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(scxmlContent, 'text/xml');
 
-          if (sourceState) {
-            // Create new transition
-            const newTransition: TransitionElement = {
-              '@_event': event,
-              '@_target': targetId,
-            };
+        // Find the element with the matching ID
+        const element = doc.querySelector(`[id="${nodeId}"]`);
 
-            // Add to source state
-            if (!sourceState.transition) {
-              sourceState.transition = newTransition;
-            } else if (Array.isArray(sourceState.transition)) {
-              sourceState.transition.push(newTransition);
-            } else {
-              sourceState.transition = [sourceState.transition, newTransition];
+        if (element) {
+          // Get existing width and height from viz:xywh or use defaults
+          const existingViz = element.getAttribute('viz:xywh');
+          let width = 160;
+          let height = 80;
+
+          if (existingViz) {
+            const parts = existingViz.split(',');
+            if (parts.length >= 4) {
+              width = parseFloat(parts[2]) || width;
+              height = parseFloat(parts[3]) || height;
             }
-
-            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
-            onSCXMLChange(updatedSCXML);
           }
+
+          // Ensure viz namespace is declared on the root element
+          const rootElement = doc.documentElement;
+          if (!rootElement.hasAttribute('xmlns:viz')) {
+            rootElement.setAttribute('xmlns:viz', 'urn:x-thingm:viz');
+          }
+
+          // Update the viz:xywh attribute with new position using setAttributeNS
+          const newVizValue = `${Math.round(x)},${Math.round(
+            y
+          )},${width},${height}`;
+          element.setAttributeNS('urn:x-thingm:viz', 'viz:xywh', newVizValue);
+
+          // Serialize back to string
+          const serializer = new XMLSerializer();
+          const updatedSCXML = serializer.serializeToString(doc);
+
+          // Update the previous SCXML ref to prevent re-parsing
+          previousScxmlRef.current = updatedSCXML;
+
+          // Update SCXML content
+          onSCXMLChange(updatedSCXML);
+
+          // Force edge update after node position change to fix connection points
+          setTimeout(() => {
+            setEdges((edges) => [...edges]);
+            // Reset flag after updates are complete
+            isUpdatingPositionRef.current = false;
+          }, 10);
+        } else {
+          console.error('Element not found in SCXML:', nodeId);
+          isUpdatingPositionRef.current = false;
         }
       } catch (error) {
-        console.error('Failed to add transition to SCXML:', error);
+        isUpdatingPositionRef.current = false;
+        console.error('Failed to sync position change:', error);
       }
     },
-    [scxmlContent, onSCXMLChange]
+    [scxmlContent, onSCXMLChange, setEdges]
   );
 
   // Handle new connections between nodes
   const onConnect = useCallback(
     (params: Connection) => {
-      const newEdge = {
-        ...params,
-        type: 'scxmlTransition',
-        animated: false,
+      // Add edge directly to ReactFlow without triggering full re-parse
+      const newEdge: Edge = {
+        id: `${params.source}-${params.target}-${Date.now()}`,
+        type: 'smoothstep',
+        source: params.source!,
+        target: params.target!,
         markerEnd: {
           type: MarkerType.ArrowClosed,
           width: 20,
           height: 20,
           color: '#6b7280',
         },
-        style: {
-          strokeWidth: 1,
-        },
         data: {
           event: 'event',
-          condition: null,
+          condition: undefined,
           actions: [],
         },
+        style: {
+          strokeWidth: 2,
+          zIndex: 1,
+          stroke: '#3b82f6',
+        },
+        zIndex: 1,
+        animated: true,
       };
+
+      // Add to ReactFlow edges immediately
       setEdges((eds) => addEdge(newEdge, eds));
 
-      // Sync new transition to SCXML
-      handleTransitionAdd(params.source!, params.target!, 'event');
+      // Update SCXML in background without triggering content change detection
+      if (parserRef.current && scxmlContent) {
+        try {
+          const parseResult = parserRef.current.parse(scxmlContent);
+          if (parseResult.success && parseResult.data) {
+            const scxmlDoc = parseResult.data;
+            const sourceState = findStateById(scxmlDoc, params.source!);
+
+            if (sourceState) {
+              const newTransition: TransitionElement = {
+                '@_event': 'event',
+                '@_target': params.target!,
+              };
+
+              // Add to source state
+              if (!sourceState.transition) {
+                sourceState.transition = newTransition;
+              } else if (Array.isArray(sourceState.transition)) {
+                sourceState.transition.push(newTransition);
+              } else {
+                sourceState.transition = [
+                  sourceState.transition,
+                  newTransition,
+                ];
+              }
+
+              // Update SCXML silently (no onSCXMLChange call)
+              const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+              previousScxmlRef.current = updatedSCXML; // Update reference to prevent re-parse
+
+              // Only call onSCXMLChange if we want to notify parent, but prevent re-parse
+              if (onSCXMLChange) {
+                isUpdatingPositionRef.current = true; // Prevent re-parse
+                onSCXMLChange(updatedSCXML);
+                setTimeout(() => {
+                  isUpdatingPositionRef.current = false;
+                }, 100);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to update SCXML in background:', error);
+        }
+      }
     },
-    [setEdges, handleTransitionAdd]
+    [setEdges, scxmlContent, onSCXMLChange]
   );
 
-  // Notify parent component of node changes
+  // Use refs to avoid all dependencies and prevent infinite loops
+  const nodesRef = React.useRef(nodes);
+  const onNodesChangeRef = React.useRef(onNodesChange);
+  const handleNodePositionChangeRef = React.useRef(handleNodePositionChange);
+
+  // Keep refs up to date
+  nodesRef.current = nodes;
+  onNodesChangeRef.current = onNodesChange;
+  handleNodePositionChangeRef.current = handleNodePositionChange;
+
+  // Debounce position updates to prevent rapid fire updates
+  const positionUpdateTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const lastPositionUpdateRef = React.useRef<
+    Map<string, { x: number; y: number }>
+  >(new Map());
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (positionUpdateTimeoutRef.current) {
+        clearTimeout(positionUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Completely isolated drag handler to prevent infinite loops
   const handleNodesChange = useCallback(
     (changes: any[]) => {
-      // Apply changes to ReactFlow nodes first
-      const updatedNodes = applyNodeChanges(changes, nodes);
-      setNodes(updatedNodes);
+      // Apply changes using the built-in handler first
+      onNodesChangeRef.current(changes);
 
-      // Extract position updates when dragging ends
+      // Early exit for any non-position changes
       const positionChanges = changes.filter(
-        (change) => change.type === 'position' && !change.dragging
+        (change) => change.type === 'position' && change.dragging === false
       );
 
-      if (positionChanges.length > 0) {
-        // Update visual metadata for moved nodes using the updated node positions
-        positionChanges.forEach((change) => {
-          const updatedNode = updatedNodes.find(
-            (node) => node.id === change.id
-          );
+      if (positionChanges.length === 0) {
+        return; // No position changes to handle
+      }
 
-          if (updatedNode && updatedNode.position) {
-            // Update SCXML with new position immediately
+      // Multiple guards to prevent infinite loops
+      if (isUpdatingPositionRef.current) {
+        return; // Already updating, skip
+      }
 
-            handleNodePositionChange(
+      // Clear any existing timeout
+      if (positionUpdateTimeoutRef.current) {
+        clearTimeout(positionUpdateTimeoutRef.current);
+        positionUpdateTimeoutRef.current = null;
+      }
+
+      // Process position updates with isolation
+      positionUpdateTimeoutRef.current = setTimeout(() => {
+        // Final guard check
+        if (isUpdatingPositionRef.current) {
+          return;
+        }
+
+        // Set updating flag immediately
+        isUpdatingPositionRef.current = true;
+
+        try {
+          // Build position map from ALL changes to ensure fresh data
+          const positionMap = new Map<string, { x: number; y: number }>();
+
+          // First, apply all position changes to get current positions
+          const currentNodes = [...nodesRef.current];
+          changes.forEach((change) => {
+            if (change.type === 'position' && change.position) {
+              const nodeIndex = currentNodes.findIndex(n => n.id === change.id);
+              if (nodeIndex >= 0) {
+                currentNodes[nodeIndex] = {
+                  ...currentNodes[nodeIndex],
+                  position: change.position
+                };
+              }
+              positionMap.set(change.id, change.position);
+            }
+          });
+
+          for (const change of positionChanges) {
+            const node = currentNodes.find((n) => n.id === change.id);
+            if (!node?.position) continue;
+
+            // Use the fresh position from changes or current node
+            let absoluteX = positionMap.get(change.id)?.x ?? node.position.x;
+            let absoluteY = positionMap.get(change.id)?.y ?? node.position.y;
+
+            // For child nodes, add parent position to get absolute coordinates
+            if (node.parentId) {
+              // Use fresh parent position from the current changes if available
+              const parentNode = currentNodes.find(
+                (n) => n.id === node.parentId
+              );
+              if (parentNode) {
+                const parentX = positionMap.get(node.parentId)?.x ?? parentNode.position.x;
+                const parentY = positionMap.get(node.parentId)?.y ?? parentNode.position.y;
+                absoluteX += parentX;
+                absoluteY += parentY;
+              }
+            }
+
+            // Significant change check using absolute positions
+            const lastPos = lastPositionUpdateRef.current.get(change.id);
+            if (
+              lastPos &&
+              Math.abs(lastPos.x - absoluteX) < 2 &&
+              Math.abs(lastPos.y - absoluteY) < 2
+            ) {
+              continue; // Skip insignificant changes
+            }
+
+            // Update position tracking with absolute positions
+            lastPositionUpdateRef.current.set(change.id, {
+              x: absoluteX,
+              y: absoluteY,
+            });
+
+            // Update SCXML with absolute positions
+            handleNodePositionChangeRef.current(
               change.id,
-              updatedNode.position.x,
-              updatedNode.position.y
+              absoluteX,
+              absoluteY
             );
-          } else {
-            console.log('No updated node or position found for:', change.id);
           }
-        });
-      } else {
-        console.log('No position changes to process');
-      }
-
-      if (onNodeChange) {
-        onNodeChange(updatedNodes);
-      }
+        } finally {
+          // Reset flag after a delay to ensure SCXML update completes
+          setTimeout(() => {
+            isUpdatingPositionRef.current = false;
+          }, 200);
+        }
+      }, 150); // Longer debounce
     },
-    [setNodes, onNodeChange, nodes, handleNodePositionChange]
+    [] // Absolutely no dependencies
   );
 
   // Notify parent component of edge changes
@@ -665,6 +1248,29 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     },
     [onEdgesChange, onEdgeChange, edges]
   );
+  // Handle state click to set active state
+  const handleStateClick = useCallback((stateId: string) => {
+    setActiveStates((prev) => {
+      const newStates = new Set(prev);
+      if (newStates.has(stateId)) {
+        newStates.delete(stateId);
+      } else {
+        newStates.add(stateId);
+      }
+      return newStates;
+    });
+  }, []);
+
+  // Handle initial state setting
+  React.useEffect(() => {
+    // Find initial state from nodes
+    const initialState = nodes.find((node) => node.data?.isInitial);
+    if (initialState && activeStates.size === 0) {
+      setActiveStates(new Set([initialState.id]));
+    }
+  }, [nodes]);
+
+  console.log('filteredEdges', filteredEdges);
 
   return (
     <div className='h-full w-full bg-gray-50 flex flex-col'>
@@ -672,13 +1278,103 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         scxmlContent={scxmlContent}
         onStateChange={setCurrentSimulationState}
       />
+      {/* <div className='flex items-center gap-4 px-4 py-2 bg-white border-b'>
+        <div className='flex items-center gap-2'>
+          <label className='text-sm font-medium text-gray-700'>
+            Show Transitions:
+          </label>
+          <div className='flex gap-1'>
+            <button
+              onClick={() => setTransitionDisplayMode('all')}
+              className={`px-3 py-1 rounded-l text-sm font-medium transition-colors ${
+                transitionDisplayMode === 'all'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setTransitionDisplayMode('active')}
+              className={`px-3 py-1 text-sm font-medium transition-colors ${
+                transitionDisplayMode === 'active'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              From Active
+            </button>
+            <button
+              onClick={() => setTransitionDisplayMode('available')}
+              className={`px-3 py-1 rounded-r text-sm font-medium transition-colors ${
+                transitionDisplayMode === 'available'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+              title='Only show transitions with true conditions'
+            >
+              Available Only
+            </button>
+          </div>
+        </div>
+
+        {activeStates.size > 0 && (
+          <div className='flex items-center gap-2'>
+            <span className='text-sm text-gray-600'>Active States:</span>
+            <div className='flex gap-1'>
+              {Array.from(activeStates).map(stateId => (
+                <span
+                  key={stateId}
+                  className='px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium'
+                >
+                  {stateId}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setActiveStates(new Set())}
+          className='ml-auto px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300'
+        >
+          Clear Selection
+        </button>
+      </div> */}
+
+      {/* Datamodel Display */}
+      {Object.keys(datamodelContext).length > 0 && (
+        <div className='px-4 py-2 bg-gray-50 border-b'>
+          <details className='cursor-pointer'>
+            <summary className='text-sm font-medium text-gray-700 hover:text-gray-900'>
+              Datamodel Context ({Object.keys(datamodelContext).length}{' '}
+              variables)
+            </summary>
+            <div className='mt-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto'>
+              {Object.entries(datamodelContext).map(([key, value]) => (
+                <div key={key} className='text-xs bg-white p-1 rounded border'>
+                  <span className='font-mono text-gray-600'>{key}:</span>{' '}
+                  <span className='font-mono text-gray-900'>
+                    {typeof value === 'boolean'
+                      ? value.toString()
+                      : typeof value === 'object'
+                      ? JSON.stringify(value)
+                      : value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
       <div className='flex-1'>
         <ReactFlow
-          nodes={nodesWithSimulationState}
-          edges={edges}
+          nodes={enhancedNodes}
+          edges={filteredEdges}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
+          onNodeClick={(event, node) => handleStateClick(node.id)}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={true}
@@ -699,7 +1395,42 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           connectionLineType={ConnectionLineType.SmoothStep} // Makes connection preview smooth
           connectionMode={ConnectionMode.Loose} // Allows connections from anywhere on the node
           connectionRadius={2}
+          edgesUpdatable={true}
+          edgesFocusable={true}
+          elevateEdgesOnSelect={true} // Ensures edges appear above nodes when selected
+          elevateNodesOnSelect={false} // Keep nodes below edges
+          zoomOnScroll={true}
+          zoomOnPinch={true}
+          panOnScroll={false}
+          panOnDrag={true}
         >
+          {/* Global SVG definitions for arrows */}
+          <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+            <defs>
+              <marker
+                id='arrow-marker'
+                viewBox='0 0 20 20'
+                refX='20'
+                refY='10'
+                markerWidth='10'
+                markerHeight='10'
+                orient='auto'
+              >
+                <path d='M 2 2 L 18 10 L 2 18 L 7 10 Z' fill='currentColor' />
+              </marker>
+              <marker
+                id='arrow-marker-selected'
+                viewBox='0 0 20 20'
+                refX='20'
+                refY='10'
+                markerWidth='12'
+                markerHeight='12'
+                orient='auto'
+              >
+                <path d='M 2 2 L 18 10 L 2 18 L 7 10 Z' fill='#3b82f6' />
+              </marker>
+            </defs>
+          </svg>
           <Background
             color='#cbd5e1'
             gap={20}
@@ -723,6 +1454,23 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           />
         </ReactFlow>
       </div>
+
+      {/* Global Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' })}
+        onConfirm={() => {
+          if (deleteConfirm.nodeId && handleNodeDeleteRef.current) {
+            handleNodeDeleteRef.current(deleteConfirm.nodeId);
+          }
+          setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' });
+        }}
+        title="Delete State"
+        message={`Are you sure you want to delete the state "${deleteConfirm.nodeLabel}"? This will also remove all transitions connected to this state.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   );
 };

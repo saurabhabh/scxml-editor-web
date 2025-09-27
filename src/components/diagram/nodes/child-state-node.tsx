@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Square, History, CheckCircle } from 'lucide-react';
+import { Handle, Position } from 'reactflow';
 import type { HierarchicalNode } from '@/types/hierarchical-node';
 
 interface ChildStateNodeProps {
@@ -82,10 +83,61 @@ export const ChildStateNode: React.FC<ChildStateNodeProps> = ({
         top: position.y,
         width: size.width,
         height: size.height,
+        position: 'absolute',
       }}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
+      {/* Connection handles for nested nodes */}
+      <Handle
+        type='target'
+        position={Position.Top}
+        id={`${id}-target-top`}
+        style={{
+          left: '50%',
+          top: '-4px',
+          transform: 'translateX(-50%)',
+          zIndex: 1000,
+        }}
+        className='!bg-slate-500 !border-white !w-3 !h-3 !border-2 hover:!bg-blue-500 transition-colors'
+      />
+      <Handle
+        type='source'
+        position={Position.Bottom}
+        id={`${id}-source-bottom`}
+        style={{
+          left: '50%',
+          bottom: '-4px',
+          transform: 'translateX(-50%)',
+          zIndex: 1000,
+        }}
+        className='!bg-slate-500 !border-white !w-3 !h-3 !border-2 hover:!bg-blue-500 transition-colors'
+      />
+      <Handle
+        type='target'
+        position={Position.Left}
+        id={`${id}-target-left`}
+        style={{
+          left: '-4px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 1000,
+        }}
+        className='!bg-slate-500 !border-white !w-3 !h-3 !border-2 hover:!bg-blue-500 transition-colors'
+      />
+      <Handle
+        type='source'
+        position={Position.Right}
+        id={`${id}-source-right`}
+        style={{
+          right: '-4px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 1000,
+        }}
+        className='!bg-slate-500 !border-white !w-3 !h-3 !border-2 hover:!bg-blue-500 transition-colors'
+      />
+
       <div className='h-full flex flex-col justify-center p-2'>
         <div className='flex items-center space-x-2 mb-1'>
           {getStateIcon()}

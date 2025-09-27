@@ -1,9 +1,9 @@
 // scxml-state-node
 'use client';
 
-import React, { memo } from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
-import { Circle, Square, Target } from 'lucide-react';
+import React, { memo, useMemo } from 'react';
+import { Handle, Position, type NodeProps, useStore } from 'reactflow';
+import { Circle, Square, Target, Trash2 } from 'lucide-react';
 import {
   visualStylesToCSS,
   getAdditionalClasses,
@@ -37,11 +37,18 @@ export interface SCXMLStateNodeData {
     newStateType: 'simple' | 'compound' | 'final' | 'parallel'
   ) => void;
   onActionsChange?: (entryActions: string[], exitActions: string[]) => void;
+  onDelete?: () => void;
   isEditing?: boolean;
 }
 
 export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
-  ({ data, selected }) => {
+  ({ data, selected, id }) => {
+    // Get edges from store to check if this node has any connections
+    const edges = useStore((state) => state.edges);
+    const hasConnections = useMemo(() => {
+      return edges.some((edge) => edge.source === id || edge.target === id);
+    }, [edges, id]);
+
     const {
       label,
       stateType,
@@ -53,6 +60,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       onLabelChange,
       onStateTypeChange,
       onActionsChange,
+      onDelete,
       isEditing = false,
     } = data;
 
@@ -138,7 +146,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
 
     // Generate base CSS classes
     const getBaseClasses = () => {
-      let baseClasses = 'overflow-hidden isolate';
+      let baseClasses = 'overflow-hidden isolate rounded-xl';
 
       // Only add minimum sizes if no explicit dimensions are provided via data
       if (!data.width && !data.height) {
@@ -161,9 +169,53 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       return baseClasses;
     };
 
+    // Determine state characteristics for styling
+    const getStateCharacteristics = () => {
+      const labelLower = label.toLowerCase();
+      const actionCount = entryActions.length + exitActions.length;
+
+      // Check for state types
+      if (
+        isInitial ||
+        labelLower.includes('idle') ||
+        labelLower.includes('initial')
+      ) {
+        return { type: 'initial', color: '#10b981', bg: '#ecfdf5' }; // Green
+      }
+      if (
+        labelLower.includes('error') ||
+        labelLower.includes('fail') ||
+        labelLower.includes('exception')
+      ) {
+        return { type: 'error', color: '#dc2626', bg: '#fef2f2' }; // Red
+      }
+      if (
+        stateType === 'final' ||
+        labelLower.includes('final') ||
+        labelLower.includes('complete')
+      ) {
+        return { type: 'terminal', color: '#7c3aed', bg: '#f3e8ff' }; // Purple
+      }
+      if (actionCount >= 3) {
+        return { type: 'complex', color: '#f59e0b', bg: '#fffbeb' }; // Orange
+      }
+      if (actionCount >= 1) {
+        return { type: 'operational', color: '#3b82f6', bg: '#eff6ff' }; // Blue
+      }
+      return { type: 'simple', color: '#3b82f6', bg: '#eff6ff' }; // Blue default
+    };
+
+    const stateChar = getStateCharacteristics();
+
     // Convert visual styles to CSS properties and apply dimensions from data
     const inlineStyles = {
-      ...(visualStyles ? visualStylesToCSS(visualStyles) : {}),
+      ...(visualStyles
+        ? visualStylesToCSS(visualStyles)
+        : {
+            background: `linear-gradient(135deg, ${stateChar.bg} 0%, ${stateChar.bg}99 50%, ${stateChar.bg}66 100%)`,
+            borderColor: stateChar.color,
+            borderWidth: '2px',
+          }),
       // Apply width and height from node data (set by viz:xywh)
       ...(data.width && { width: data.width }),
       ...(data.height && { height: data.height }),
@@ -178,49 +230,65 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     // Get additional classes for shadows, transitions, etc.
     const additionalClasses = visualStyles
       ? getAdditionalClasses(visualStyles, isActive, selected)
-      : 'shadow-lg hover:shadow-xl transition-all duration-300';
+      : 'shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.02] hover:z-10 ring-2 ring-opacity-0 hover:ring-opacity-30 ring-blue-400';
 
-    const nodeClasses = `${getBaseClasses()} ${additionalClasses}`;
+    const nodeClasses = `${getBaseClasses()} ${additionalClasses} backdrop-blur-sm border-2`;
 
     // Apply border style
     if (visualStyles?.borderStyle) {
       inlineStyles.borderStyle = visualStyles.borderStyle;
     }
 
-    // Get icon for state type
+    // Get icon for state type with matching colors
     const getStateIcon = () => {
+      const iconColor = stateChar.color;
+
       // Special handling for history states
       if (label.toLowerCase().includes('history')) {
-        return <Circle className='h-4 w-4 text-blue-600' fill='currentColor' />;
+        return (
+          <Circle
+            className='h-4 w-4'
+            style={{ color: iconColor }}
+            fill='currentColor'
+          />
+        );
       }
 
       switch (stateType) {
         case 'final':
-          return <Target className='h-4 w-4 text-red-600' />;
+          return <Target className='h-4 w-4' style={{ color: iconColor }} />;
         case 'compound':
-          return <Square className='h-4 w-4 text-purple-600' />;
+          return <Square className='h-4 w-4' style={{ color: iconColor }} />;
         case 'parallel':
           return (
             <div className='flex items-center space-x-1'>
               <div className='flex'>
-                <Square className='h-3 w-3 text-orange-600 fill-orange-200' />
-                <Square className='h-3 w-3 text-orange-600 fill-orange-200 -ml-1' />
+                <Square
+                  className='h-3 w-3'
+                  style={{ color: iconColor, fill: `${iconColor}33` }}
+                />
+                <Square
+                  className='h-3 w-3 -ml-1'
+                  style={{ color: iconColor, fill: `${iconColor}33` }}
+                />
               </div>
-              <span className='text-xs text-orange-700 font-bold'>⚡</span>
+              <span className='text-xs font-bold' style={{ color: iconColor }}>
+                ⚡
+              </span>
             </div>
           );
         default:
-          return <Circle className='h-4 w-4 text-gray-600' />;
+          return <Circle className='h-4 w-4' style={{ color: iconColor }} />;
       }
     };
 
     return (
       <div
-        className={nodeClasses}
+        className={`${nodeClasses} group`}
         style={{
           ...inlineStyles,
           position: 'relative',
-          zIndex: 1,
+          zIndex: 10, // Higher z-index to render above edges
           overflow: 'visible',
           // Ensure fixed dimensions when specified
           ...(data.width && { minWidth: data.width, maxWidth: data.width }),
@@ -230,14 +298,16 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
           }),
         }}
       >
-        {/* Dynamic connection handles based on actual node dimensions */}
+        {/* Dynamic connection handles - only show if node has connections */}
+
         <Handle
           type='target'
           position={Position.Top}
+          id='top'
           style={{
             left: '50%',
-            top: '-4px',
-            transform: 'translateX(-50%)',
+            top: '0',
+            transform: 'translate(-50%, -50%)',
             zIndex: 10,
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
@@ -245,10 +315,11 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         <Handle
           type='source'
           position={Position.Bottom}
+          id='bottom'
           style={{
             left: '50%',
-            bottom: '-4px',
-            transform: 'translateX(-50%)',
+            bottom: '0',
+            transform: 'translate(-50%, 50%)',
             zIndex: 10,
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
@@ -256,10 +327,11 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         <Handle
           type='target'
           position={Position.Left}
+          id='left'
           style={{
-            left: '-4px',
+            left: '0',
             top: '50%',
-            transform: 'translateY(-50%)',
+            transform: 'translate(-50%, -50%)',
             zIndex: 10,
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
@@ -267,14 +339,29 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         <Handle
           type='source'
           position={Position.Right}
+          id='right'
           style={{
-            right: '-4px',
+            right: '0',
             top: '50%',
-            transform: 'translateY(-50%)',
+            transform: 'translate(50%, -50%)',
             zIndex: 10,
           }}
           className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
         />
+
+        {/* Delete button - only show if onDelete is provided and not initial state */}
+        {onDelete && !isInitial && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className='absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
+            title='Delete state'
+          >
+            <Trash2 className='h-4 w-4 text-gray-600 hover:text-red-600 transition-colors' />
+          </button>
+        )}
 
         <div className={`p-4 ${data.height ? 'h-full overflow-hidden' : ''}`}>
           {/* State header with icon and name */}
@@ -288,13 +375,13 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                   onChange={(e) => setTempLabel(e.target.value)}
                   onBlur={handleLabelSubmit}
                   onKeyDown={handleLabelKeyDown}
-                  className='font-semibold text-gray-900 text-base bg-white border border-blue-300 rounded px-2 py-1 min-w-0 flex-1'
+                  className='font-bold text-gray-900 text-base bg-white border-2 border-blue-400 rounded-lg px-2 py-1 min-w-0 flex-1 shadow-sm'
                   autoFocus
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <span
-                  className='font-semibold text-gray-900 text-base cursor-pointer hover:bg-blue-50 px-2 py-1 rounded'
+                  className='font-bold text-gray-800 text-lg cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors'
                   onDoubleClick={handleLabelDoubleClick}
                   title='Double-click to edit state name'
                 >
@@ -303,7 +390,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
               )}
             </div>
             {isInitial && (
-              <div className='bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium'>
+              <div className='bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold shadow-sm border border-green-300'>
                 Initial
               </div>
             )}

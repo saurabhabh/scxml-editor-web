@@ -281,7 +281,7 @@ export class ContainerLayoutManager {
 
     // More intelligent height calculation based on child types
     // For parallel states (like Engines), we need more vertical space for children
-    if (container.type === 'scxmlCompound' && childCount > 2) {
+    if ((container.type === 'group' || container.type === 'scxmlCompound') && childCount > 2) {
       const childrenPerRow = Math.min(2, childCount);
       const rows = Math.ceil(childCount / childrenPerRow);
       const childHeight = 70; // Height per child row for complex containers
