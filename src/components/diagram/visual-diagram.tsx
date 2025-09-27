@@ -6,6 +6,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   useNodesState,
   useEdgesState,
@@ -48,11 +49,13 @@ import {
   removeStateFromDocument,
   addTransitionToState,
   updateStatePosition,
+  removeTransitionByEdgeId,
 } from '@/lib/utils/scxml-manipulation-utils';
 import type { ElementVisualMetadata } from '@/types/visual-metadata';
 import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
 import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { ArrowUp, ArrowUp10, ArrowUpIcon } from 'lucide-react';
 
 interface VisualDiagramProps {
   scxmlContent: string;
@@ -773,7 +776,10 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               const namespaceURI = VISUAL_METADATA_CONSTANTS.NAMESPACE_URI;
 
               // Remove any ns1 namespace declaration if it exists
-              if (rootElement.hasAttribute('xmlns:ns1') && rootElement.getAttribute('xmlns:ns1') === namespaceURI) {
+              if (
+                rootElement.hasAttribute('xmlns:ns1') &&
+                rootElement.getAttribute('xmlns:ns1') === namespaceURI
+              ) {
                 rootElement.removeAttribute('xmlns:ns1');
               }
 
@@ -835,6 +841,125 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     scxmlContent,
   ]);
 
+  // Function to add a new root state
+  const handleAddRootState = React.useCallback(() => {
+    if (!onSCXMLChange || !scxmlContent) {
+      console.error('Cannot add state: SCXML not available');
+      return;
+    }
+
+    try {
+      // Generate a unique ID for the new state
+      let newStateId = 'state_1';
+      let counter = 1;
+      const existingIds = new Set(nodes.map((n) => n.id));
+      while (existingIds.has(newStateId)) {
+        counter++;
+        newStateId = `state_${counter}`;
+      }
+
+      // Parse current SCXML
+      const parseResult = parserRef.current?.parse(scxmlContent);
+      if (parseResult?.success && parseResult.data) {
+        const scxmlDoc = parseResult.data;
+
+        // Find the topmost compound/state to use as parent
+        // Look for states at root level that can have children (compound states)
+        const rootStates = nodes.filter((n) => !n.parentId);
+        let parentId: string | undefined = undefined;
+
+        // Find first compound state (a state that already has children or can have them)
+        for (const node of rootStates) {
+          // Check if this node has children or is a compound state
+          const hasChildren = nodes.some((n) => n.parentId === node.id);
+          if (hasChildren || node.data?.stateType === 'compound') {
+            parentId = node.id;
+            break;
+          }
+        }
+
+        // If no compound state found, use the first regular state that's not final
+        if (!parentId) {
+          const nonFinalState = rootStates.find(
+            (n) => n.data?.stateType !== 'final'
+          );
+          if (nonFinalState) {
+            parentId = nonFinalState.id;
+          }
+        }
+
+        // Calculate position for the new state
+        let x = 100;
+        let y = 100;
+
+        if (parentId) {
+          // Position inside the parent state
+          const childNodes = nodes.filter((n) => n.parentId === parentId);
+
+          if (childNodes.length > 0) {
+            // Use a grid layout for positioning new states
+            const cols = 4; // Maximum 4 columns
+            const rowHeight = 120; // Height + spacing
+            const colWidth = 200; // Width + spacing
+
+            // Find the next available position in the grid
+            const existingPositions = childNodes.map((n) => ({
+              col: Math.floor((n.position?.x || 0) / colWidth),
+              row: Math.floor(((n.position?.y || 0) - 100) / rowHeight),
+            }));
+
+            // Find the next empty slot
+            let found = false;
+            for (let row = 0; row < 10 && !found; row++) {
+              for (let col = 0; col < cols && !found; col++) {
+                const occupied = existingPositions.some(
+                  (p) => p.col === col && p.row === row
+                );
+                if (!occupied) {
+                  x = 50 + col * colWidth;
+                  y = 100 + row * rowHeight;
+                  found = true;
+                }
+              }
+            }
+          } else {
+            // First child in the parent
+            x = 50;
+            y = 100;
+          }
+        } else {
+          // No parent found, add at root level
+          const rootNodes = nodes.filter((n) => !n.parentId);
+          if (rootNodes.length > 0) {
+            // Place it to the right of the rightmost node
+            const maxX = Math.max(...rootNodes.map((n) => n.position.x));
+            x = maxX + 200;
+          }
+        }
+
+        // Create new state element
+        const newState = createStateElement(newStateId);
+
+        // Add position metadata
+        (newState as any)['@_viz:xywh'] = `${x},${y},160,80`;
+
+        // Add to SCXML document with parentId if found
+        addStateToDocument(scxmlDoc, newState, parentId);
+
+        // Serialize and update
+        const updatedSCXML = parserRef.current!.serialize(scxmlDoc, true);
+
+        // DON'T update previousScxmlRef here - let the component update cycle handle it
+        // This ensures the change is detected in the useEffect
+
+        // Update SCXML content - this will trigger re-parse and UI update
+        onSCXMLChange(updatedSCXML);
+      }
+    } catch (error) {
+      console.error('Failed to add new state:', error);
+    }
+  }, [scxmlContent, onSCXMLChange, nodes]);
+
   // Update datamodel context when parsed data changes
   React.useEffect(() => {
     if (parsedData.datamodelContext) {
@@ -867,9 +992,15 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             width: 12,
             height: 12,
           },
+          selectable: true,
+          focusable: true,
         };
       }
-      return edge;
+      return {
+        ...edge,
+        selectable: true,
+        focusable: true,
+      };
     };
 
     if (transitionDisplayMode === 'all') {
@@ -924,30 +1055,36 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     }
 
     // 'available' mode - only show transitions with true or no conditions
-    return fromActiveStates.filter((edge) => {
-      if (!edge.data?.condition) {
-        return applySelectionStyles(edge); // No condition means always available
-      }
+    return fromActiveStates
+      .filter((edge) => {
+        if (!edge.data?.condition) {
+          return true; // No condition means always available
+        }
 
-      const evaluationResult = ConditionEvaluator.evaluateCondition(
-        edge.data.condition,
-        datamodelContext
-      );
+        const evaluationResult = ConditionEvaluator.evaluateCondition(
+          edge.data.condition,
+          datamodelContext
+        );
 
-      // Include edge with evaluation result
-      if (evaluationResult !== false) {
-        const enhancedEdge = {
-          ...edge,
-          data: {
-            ...edge.data,
-            conditionEvaluated: evaluationResult,
-          },
-        };
+        return evaluationResult !== false;
+      })
+      .map((edge) => {
+        let enhancedEdge = edge;
+        if (edge.data?.condition) {
+          const evaluationResult = ConditionEvaluator.evaluateCondition(
+            edge.data.condition,
+            datamodelContext
+          );
+          enhancedEdge = {
+            ...edge,
+            data: {
+              ...edge.data,
+              conditionEvaluated: evaluationResult,
+            },
+          };
+        }
         return applySelectionStyles(enhancedEdge);
-      }
-
-      return false; // Don't show if condition is false
-    });
+      });
   }, [
     edges,
     activeStates,
@@ -1016,14 +1153,42 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       // When content changes, use the new positions from parsedData
       // But only if we're not in the middle of a position/structure update
       if (!isUpdatingPositionRef.current) {
-        setNodes(parsedData.nodes);
-        setEdges(parsedData.edges);
+        // Preserve current node positions when updating
+        setNodes((currentNodes) => {
+          const currentPositions = new Map(
+            currentNodes.map((node) => [node.id, node.position])
+          );
+
+          return parsedData.nodes.map((node) => {
+            const currentPosition = currentPositions.get(node.id);
+            if (currentPosition) {
+              // Use existing position if node already exists
+              return { ...node, position: currentPosition };
+            }
+            // Use parsed position for new nodes
+            return node;
+          });
+        });
+
+        // Ensure all edges are selectable and focusable
+        const selectableEdges = parsedData.edges.map((edge) => ({
+          ...edge,
+          selectable: true,
+          focusable: true,
+        }));
+        setEdges(selectableEdges);
       }
       // If we're updating (like during delete), we handle nodes directly in the operation
     } else if (nodes.length === 0 && parsedData.nodes.length > 0) {
       // Initial load case - just set the nodes
       setNodes(parsedData.nodes);
-      setEdges(parsedData.edges);
+      // Ensure all edges are selectable and focusable
+      const selectableEdges = parsedData.edges.map((edge) => ({
+        ...edge,
+        selectable: true,
+        focusable: true,
+      }));
+      setEdges(selectableEdges);
     }
   }, [scxmlContent, parsedData]);
 
@@ -1049,7 +1214,10 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           const namespaceURI = 'urn:x-thingm:viz';
 
           // Remove any ns1 namespace declaration if it exists
-          if (rootElement.hasAttribute('xmlns:ns1') && rootElement.getAttribute('xmlns:ns1') === namespaceURI) {
+          if (
+            rootElement.hasAttribute('xmlns:ns1') &&
+            rootElement.getAttribute('xmlns:ns1') === namespaceURI
+          ) {
             rootElement.removeAttribute('xmlns:ns1');
           }
 
@@ -1063,7 +1231,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           let height = 80;
 
           // Try to get existing viz:xywh value (or any xywh with the namespace)
-          const existingViz = element.getAttribute('viz:xywh') || element.getAttributeNS(namespaceURI, 'xywh');
+          const existingViz =
+            element.getAttribute('viz:xywh') ||
+            element.getAttributeNS(namespaceURI, 'xywh');
           if (existingViz) {
             const parts = existingViz.split(',');
             if (parts.length >= 4) {
@@ -1080,7 +1250,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
           // Set the viz:xywh attribute using setAttribute (not setAttributeNS)
           // This ensures we get viz:xywh exactly as we want it
-          const newVizValue = `${Math.round(x)},${Math.round(y)},${width},${height}`;
+          const newVizValue = `${Math.round(x)},${Math.round(
+            y
+          )},${width},${height}`;
           element.setAttribute('viz:xywh', newVizValue);
 
           // Serialize back to string
@@ -1219,6 +1391,34 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   // Completely isolated drag handler to prevent infinite loops
   const handleNodesChange = useCallback(
     (changes: any[]) => {
+      // Check for remove changes (delete key pressed)
+      const removeChanges = changes.filter(
+        (change) => change.type === 'remove'
+      );
+
+      if (removeChanges.length > 0) {
+        // Show confirmation dialog for node deletion
+        removeChanges.forEach((change) => {
+          // Find the node to get its label for the confirmation dialog
+          const nodeToDelete = nodes.find((n) => n.id === change.id);
+          if (nodeToDelete) {
+            handleNodeDeleteWrapper(
+              change.id,
+              nodeToDelete.data?.label || change.id
+            );
+          }
+        });
+        // Don't apply the remove changes to React Flow directly
+        // The confirmation dialog will handle the actual deletion
+        const nonRemoveChanges = changes.filter(
+          (change) => change.type !== 'remove'
+        );
+        if (nonRemoveChanges.length > 0) {
+          onNodesChangeRef.current(nonRemoveChanges);
+        }
+        return;
+      }
+
       // Apply changes using the built-in handler first
       onNodesChangeRef.current(changes);
 
@@ -1328,21 +1528,62 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         }
       }, 150); // Longer debounce
     },
-    [] // Absolutely no dependencies
+    [nodes, handleNodeDeleteWrapper] // Add required dependencies
   );
 
   // Notify parent component of edge changes
   const handleEdgesChange = useCallback(
     (changes: any[]) => {
+      // Apply all changes to ReactFlow state
       onEdgesChange(changes);
 
-      // Handle edge updates - for now just notify parent
-      // In future, we could sync edge waypoints and styling
+      // Check if any edges are being deleted
+      const deleteChanges = changes.filter(
+        (change) => change.type === 'remove'
+      );
+
+      if (deleteChanges.length > 0 && parserRef.current && onSCXMLChange) {
+        // Handle edge deletion in SCXML
+        try {
+          const parseResult = parserRef.current.parse(scxmlContent);
+          if (parseResult.success && parseResult.data) {
+            const scxmlDoc = parseResult.data;
+            let anyRemoved = false;
+
+            // Process all deletions
+            for (const change of deleteChanges) {
+              const removed = removeTransitionByEdgeId(scxmlDoc, change.id);
+              if (removed) anyRemoved = true;
+            }
+
+            if (anyRemoved) {
+              // Serialize the updated SCXML
+              const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+
+              // Update without triggering re-parse
+              isUpdatingPositionRef.current = true;
+              previousScxmlRef.current = updatedSCXML;
+              onSCXMLChange(updatedSCXML);
+
+              // Clear selection state
+              setSelectedTransitions(new Set());
+
+              // Reset flag immediately
+              isUpdatingPositionRef.current = false;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to sync edge deletion to SCXML:', error);
+          isUpdatingPositionRef.current = false;
+        }
+      }
+
+      // Notify parent of edge changes
       if (onEdgeChange) {
         onEdgeChange(edges);
       }
     },
-    [onEdgesChange, onEdgeChange, edges]
+    [onEdgesChange, onEdgeChange, edges, scxmlContent, onSCXMLChange]
   );
   // Handle state click to set active state
   const handleStateClick = useCallback((stateId: string) => {
@@ -1461,32 +1702,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           Clear Selection
         </button>
       </div> */}
-
-      {/* Datamodel Display */}
-      {Object.keys(datamodelContext).length > 0 && (
-        <div className='px-4 py-2 bg-gray-50 border-b'>
-          <details className='cursor-pointer'>
-            <summary className='text-sm font-medium text-gray-700 hover:text-gray-900'>
-              Datamodel Context ({Object.keys(datamodelContext).length}{' '}
-              variables)
-            </summary>
-            <div className='mt-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto'>
-              {Object.entries(datamodelContext).map(([key, value]) => (
-                <div key={key} className='text-xs bg-white p-1 rounded border'>
-                  <span className='font-mono text-gray-600'>{key}:</span>{' '}
-                  <span className='font-mono text-gray-900'>
-                    {typeof value === 'boolean'
-                      ? value.toString()
-                      : typeof value === 'object'
-                      ? JSON.stringify(value)
-                      : value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </details>
-        </div>
-      )}
       <div className='flex-1'>
         <ReactFlow
           nodes={enhancedNodes}
@@ -1513,6 +1728,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           nodesDraggable={true}
           nodesConnectable={true}
           elementsSelectable={true}
+          deleteKeyCode={['Backspace', 'Delete']} // Enable deletion via keyboard
           connectionLineType={ConnectionLineType.SmoothStep} // Makes connection preview smooth
           connectionMode={ConnectionMode.Loose} // Allows connections from anywhere on the node
           connectionRadius={2}
@@ -1563,8 +1779,23 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             showZoom={true}
             showFitView={true}
             showInteractive={true}
-            className='bg-white/90 border border-slate-200 rounded-lg shadow-sm'
-          />
+          >
+            <ControlButton
+              onClick={handleAddRootState}
+              title='Add State'
+              aria-label='Add State'
+              className='text-gray-600 hover:text-gray-900'
+            >
+              S
+            </ControlButton>
+            <ControlButton
+              title='One Level Up'
+              aria-label='One Level Up'
+              className='text-gray-600 hover:text-gray-900'
+            >
+              <ArrowUp />
+            </ControlButton>
+          </Controls>
           <MiniMap
             position='bottom-right'
             nodeStrokeColor='#64748b'

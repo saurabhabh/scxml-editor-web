@@ -771,14 +771,14 @@ export const GroupNode = memo<NodeProps<GroupNodeData>>(
                     Child States ({childNodes.length})
                   </div>
                   {/* Add child button - always visible */}
-                  <button
+                  {/* <button
                     onClick={handleAddChild}
                     className='flex items-center space-x-1 text-xs cursor-pointer bg-blue-500 text-white hover:bg-blue-600 px-3 py-1.5 rounded-md transition-all hover:shadow-md group'
                     title='Add new child state'
                   >
                     <Plus className='h-3 w-3 group-hover:rotate-90 transition-transform' />
                     <span>Add State</span>
-                  </button>
+                  </button> */}
                 </div>
                 {/* ReactFlow renders child nodes here automatically */}
                 <div className='relative w-full h-full overflow-visible' />

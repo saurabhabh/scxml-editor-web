@@ -1,4 +1,5 @@
 import type * as monaco from 'monaco-editor';
+import { extractStateIdsFromXML } from '@/lib/utils/state-id-extractor';
 
 /**
  * SCXML Elements organized by category
@@ -729,22 +730,70 @@ function createAttributeSuggestions(
  */
 function createAttributeValueSuggestions(
   monaco: typeof import('monaco-editor'),
-  context: CompletionContext
+  context: CompletionContext,
+  model: monaco.editor.ITextModel
 ): monaco.languages.CompletionItem[] {
   if (!context.currentAttribute) return [];
 
-  const validValues = ATTRIBUTE_VALUES[context.currentAttribute] || [];
   const suggestions: monaco.languages.CompletionItem[] = [];
 
-  for (const value of validValues) {
-    suggestions.push({
-      label: value,
-      kind: monaco.languages.CompletionItemKind.Value,
-      insertText: value,
-      documentation: `Valid value for ${context.currentAttribute} attribute`,
-      detail: 'Attribute Value',
-      range: undefined as any, // Let Monaco handle the range
-    });
+  // Handle state ID references for target, initial, and default attributes
+  if (
+    context.currentAttribute === 'target' ||
+    context.currentAttribute === 'initial' ||
+    context.currentAttribute === 'default'
+  ) {
+    // Get the current document content
+    const xmlContent = model.getValue();
+
+    // Extract all state IDs from the document
+    const stateIdInfos = extractStateIdsFromXML(xmlContent);
+
+    // Create suggestions for each state ID
+    for (const stateInfo of stateIdInfos) {
+      // Create a descriptive label showing the state hierarchy
+      const pathLabel = stateInfo.path.length > 1
+        ? stateInfo.path.slice(0, -1).join(' > ') + ' > '
+        : '';
+
+      suggestions.push({
+        label: stateInfo.id,
+        kind: monaco.languages.CompletionItemKind.Reference,
+        insertText: stateInfo.id,
+        documentation: `${stateInfo.type.charAt(0).toUpperCase() + stateInfo.type.slice(1)} state${
+          stateInfo.parent ? ` in ${stateInfo.parent}` : ''
+        }`,
+        detail: `${pathLabel}${stateInfo.id} (${stateInfo.type})`,
+        sortText: stateInfo.id, // Sort alphabetically by ID
+        range: undefined as any, // Let Monaco handle the range
+      });
+    }
+
+    // If no state IDs found, provide helpful message
+    if (suggestions.length === 0) {
+      suggestions.push({
+        label: '(No states defined)',
+        kind: monaco.languages.CompletionItemKind.Text,
+        insertText: '',
+        documentation: 'Define states in your SCXML document first',
+        detail: 'No available state IDs',
+        range: undefined as any,
+      });
+    }
+  } else {
+    // Use static values for other attributes
+    const validValues = ATTRIBUTE_VALUES[context.currentAttribute] || [];
+
+    for (const value of validValues) {
+      suggestions.push({
+        label: value,
+        kind: monaco.languages.CompletionItemKind.Value,
+        insertText: value,
+        documentation: `Valid value for ${context.currentAttribute} attribute`,
+        detail: 'Attribute Value',
+        range: undefined as any, // Let Monaco handle the range
+      });
+    }
   }
 
   return suggestions;
@@ -773,7 +822,8 @@ export function createEnhancedSCXMLCompletionProvider(
         case 'attributeValue':
           suggestions = createAttributeValueSuggestions(
             monaco,
-            completionContext
+            completionContext,
+            model
           );
           break;
         case 'text':

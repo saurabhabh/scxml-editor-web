@@ -370,6 +370,86 @@ export function removeTransitionFromState(
 }
 
 /**
+ * Remove a specific transition by its edge ID
+ * Edge ID format: "source-to-target-event[conditionHash]-randomSuffix"
+ */
+export function removeTransitionByEdgeId(
+  scxmlDoc: SCXMLDocument,
+  edgeId: string
+): boolean {
+  // Parse edge ID: source-to-target-event[conditionHash]-randomSuffix
+  const toIndex = edgeId.indexOf('-to-');
+  if (toIndex === -1) return false;
+
+  const sourceId = edgeId.substring(0, toIndex);
+  const remaining = edgeId.substring(toIndex + 4); // Skip '-to-'
+
+  // Find the next dash after the target ID
+  // The target ID might contain dashes, so we need to find where the event part starts
+  const parts = remaining.split('-');
+  if (parts.length < 2) return false;
+
+  // Try to find the target state by checking each possible split
+  let targetId = '';
+  let eventPart = '';
+
+  for (let i = 1; i <= parts.length - 1; i++) {
+    const possibleTargetId = parts.slice(0, i).join('-');
+    const possibleEventPart = parts[i];
+
+    // Check if this target exists in the document
+    if (findStateById(scxmlDoc, possibleTargetId)) {
+      targetId = possibleTargetId;
+      eventPart = possibleEventPart;
+      break;
+    }
+  }
+
+  if (!targetId) {
+    // Fallback: assume single-word target
+    targetId = parts[0];
+    eventPart = parts[1] || '';
+  }
+
+  // Find the source state
+  const sourceState = findStateById(scxmlDoc, sourceId);
+  if (!sourceState || !sourceState.transition) return false;
+
+  // Find and remove the matching transition
+  const transitions = Array.isArray(sourceState.transition)
+    ? sourceState.transition
+    : [sourceState.transition];
+
+  let foundIndex = -1;
+  for (let i = 0; i < transitions.length; i++) {
+    const transition = transitions[i];
+
+    // Match by target
+    if (transition['@_target'] === targetId) {
+      // If the transition has an event, check if it matches
+      const transitionEvent = transition['@_event'] || 'always';
+
+      // The event part in the edge ID might be "event[conditionHash]-randomSuffix"
+      // We only need to match the event name part
+      if (eventPart === 'always' && !transition['@_event']) {
+        foundIndex = i;
+        break;
+      } else if (eventPart && eventPart.startsWith(transitionEvent)) {
+        foundIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (foundIndex >= 0) {
+    removeTransitionFromState(sourceState, foundIndex);
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Update the visual position metadata for a state
  */
 export function updateStatePosition(
