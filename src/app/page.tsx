@@ -15,31 +15,7 @@ import { SCXMLParser, SCXMLValidator } from '@/lib';
 import { hasVisualMetadata } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileInfo, ValidationError } from '@/types/common';
-
-const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:viz="http://visual-scxml-editor/metadata" version="1.0" initial="red">
-  <state id="red" viz:xywh="100 50 140 80" viz:rgb="FFEEEE">
-    <onentry>
-      <log label="Traffic Light" expr="Red"></log>
-      <send event="next" delay="5s"></send>
-    </onentry>
-    <transition event="next" target="green" ></transition>
-  </state>
-  <state id="green" viz:xywh="400 300 140 80" viz:rgb="e8f5e8">
-    <onentry>
-      <log label="Traffic Light" expr="Green"></log>
-      <send event="next" delay="3s"></send>
-    </onentry>
-    <transition event="next" target="yellow" ></transition>
-  </state>
-  <state id="yellow" viz:xywh="700 50 140 80" viz:rgb="fffde7">
-    <onentry>
-      <log label="Traffic Light" expr="Yellow"></log>
-      <send event="next" delay="2s"></send>
-    </onentry>
-    <transition event="next" target="red" ></transition>
-  </state>
-</scxml>
-`;
+import { DEFAULT_SCXML_TEMPLATE } from '@/lib/consts/default_scxml_template';
 
 export default function Home() {
   const {

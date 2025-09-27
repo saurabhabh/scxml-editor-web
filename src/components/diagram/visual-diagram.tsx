@@ -50,6 +50,7 @@ import {
   updateStatePosition,
 } from '@/lib/utils/scxml-manipulation-utils';
 import type { ElementVisualMetadata } from '@/types/visual-metadata';
+import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
 import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
@@ -153,6 +154,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   const [activeStates, setActiveStates] = React.useState<Set<string>>(
     new Set()
   );
+  const [selectedTransitions, setSelectedTransitions] = React.useState<
+    Set<string>
+  >(new Set());
   const [datamodelContext, setDatamodelContext] = React.useState<
     Record<string, any>
   >({});
@@ -285,13 +289,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   }, []);
 
   // Wrapper for handleNodeDelete that uses the ref
-  const handleNodeDeleteWrapper = React.useCallback((nodeId: string, nodeLabel: string) => {
-    setDeleteConfirm({
-      isOpen: true,
-      nodeId,
-      nodeLabel,
-    });
-  }, []);
+  const handleNodeDeleteWrapper = React.useCallback(
+    (nodeId: string, nodeLabel: string) => {
+      setDeleteConfirm({
+        isOpen: true,
+        nodeId,
+        nodeLabel,
+      });
+    },
+    []
+  );
 
   // Parse SCXML first to get initial data
   const parsedData = useMemo(() => {
@@ -404,7 +411,8 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               handleNodeStateTypeChange(node.id, newStateType),
             onActionsChange: (entryActions: string[], exitActions: string[]) =>
               handleNodeActionsChange(node.id, entryActions, exitActions),
-            onDelete: () => handleNodeDeleteWrapper(node.id, node.data?.label || node.id),
+            onDelete: () =>
+              handleNodeDeleteWrapper(node.id, node.data?.label || node.id),
             // Add container-specific callbacks for group nodes
             onChildrenToggle:
               nodeUpdate.type === 'group' ? handleChildrenToggle : undefined,
@@ -522,7 +530,8 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               fontSize: 12,
             },
             labelBgStyle: {
-              fill: '#6b7280',
+              // Keep original blue/red colors from converter
+              fill: edge.labelBgStyle?.fill || '#3b82f6',
               fillOpacity: 0.95,
             },
             labelBgPadding: [6, 4] as [number, number],
@@ -631,15 +640,34 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           // Update SCXML content
           onSCXMLChange(updatedSCXML);
 
-          // Also remove from ReactFlow nodes immediately for visual feedback
-          setNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
+          // Parse the updated SCXML to get correct positions from viz:xywh
+          const updatedParseResult = parserRef.current.parse(updatedSCXML);
+          if (updatedParseResult.success && updatedParseResult.data) {
+            const converter = new SCXMLToXStateConverter();
+            const { nodes: updatedNodes, edges: updatedEdges } =
+              converter.convertToReactFlow(updatedParseResult.data);
 
-          // Remove edges connected to this node
-          setEdges((edges) =>
-            edges.filter(
-              (edge) => edge.source !== nodeId && edge.target !== nodeId
-            )
-          );
+            // Apply visual metadata to get correct positions
+            const metadataManager =
+              parserRef.current.getVisualMetadataManager();
+            const nodesWithCorrectPositions = updatedNodes.map((node) => {
+              const visualMetadata = metadataManager.getVisualMetadata(node.id);
+              if (visualMetadata?.layout) {
+                return {
+                  ...node,
+                  position: {
+                    x: visualMetadata.layout.x ?? node.position.x,
+                    y: visualMetadata.layout.y ?? node.position.y,
+                  },
+                };
+              }
+              return node;
+            });
+
+            // Set nodes and edges with correct positions from viz:xywh
+            setNodes(nodesWithCorrectPositions);
+            setEdges(updatedEdges);
+          }
 
           // Reset flag after a short delay
           setTimeout(() => {
@@ -741,10 +769,17 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             // Find the parent element
             const parentElement = doc.querySelector(`[id="${parentId}"]`);
             if (parentElement) {
-              // Ensure viz namespace is declared on the root element
               const rootElement = doc.documentElement;
+              const namespaceURI = VISUAL_METADATA_CONSTANTS.NAMESPACE_URI;
+
+              // Remove any ns1 namespace declaration if it exists
+              if (rootElement.hasAttribute('xmlns:ns1') && rootElement.getAttribute('xmlns:ns1') === namespaceURI) {
+                rootElement.removeAttribute('xmlns:ns1');
+              }
+
+              // Ensure viz namespace is declared on the root element
               if (!rootElement.hasAttribute('xmlns:viz')) {
-                rootElement.setAttribute('xmlns:viz', 'urn:x-thingm:viz');
+                rootElement.setAttribute('xmlns:viz', namespaceURI);
               }
 
               // Create the new state element in the same namespace as the parent
@@ -757,11 +792,8 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
               // Set the attributes
               newStateElement.setAttribute('id', newStateId);
-              newStateElement.setAttributeNS(
-                'urn:x-thingm:viz',
-                'viz:xywh',
-                `${x},${y},160,80`
-              );
+              // Use setAttribute with viz:xywh to ensure we get the exact format we want
+              newStateElement.setAttribute('viz:xywh', `${x},${y},160,80`);
 
               // Add to parent
               parentElement.appendChild(newStateElement);
@@ -794,7 +826,14 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         console.error('Failed to add child state:', error);
       }
     };
-  }, [nodes, onSCXMLChange, handleNodeLabelChange, handleNodeDeleteWrapper, setNodes, scxmlContent]);
+  }, [
+    nodes,
+    onSCXMLChange,
+    handleNodeLabelChange,
+    handleNodeDeleteWrapper,
+    setNodes,
+    scxmlContent,
+  ]);
 
   // Update datamodel context when parsed data changes
   React.useEffect(() => {
@@ -805,15 +844,44 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
   // Filter and evaluate edges based on display mode
   const filteredEdges = React.useMemo(() => {
+    // Apply selection highlighting to edges
+    const applySelectionStyles = (edge: Edge) => {
+      const isSelected = selectedTransitions.has(edge.id);
+      if (isSelected) {
+        // Get the existing markerEnd or create a default one
+        const existingMarker = (edge.markerEnd as any) || {
+          type: MarkerType.ArrowClosed,
+          color: '#6b7280',
+        };
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            strokeWidth: 3,
+            // Add a subtle shadow/glow effect while keeping original color
+            filter: 'drop-shadow(0 0 3px rgba(0, 0, 0, 0.3))',
+          },
+          animated: false,
+          markerEnd: {
+            ...existingMarker,
+            width: 12,
+            height: 12,
+          },
+        };
+      }
+      return edge;
+    };
+
     if (transitionDisplayMode === 'all') {
       // Show all transitions with evaluation status
       return edges.map((edge) => {
+        let enhancedEdge = edge;
         if (edge.data?.condition && datamodelContext) {
           const evaluationResult = ConditionEvaluator.evaluateCondition(
             edge.data.condition,
             datamodelContext
           );
-          return {
+          enhancedEdge = {
             ...edge,
             data: {
               ...edge.data,
@@ -821,7 +889,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             },
           };
         }
-        return edge;
+        return applySelectionStyles(enhancedEdge);
       });
     }
 
@@ -837,12 +905,13 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
     if (transitionDisplayMode === 'active') {
       // Show all transitions from active states
       return fromActiveStates.map((edge) => {
+        let enhancedEdge = edge;
         if (edge.data?.condition && datamodelContext) {
           const evaluationResult = ConditionEvaluator.evaluateCondition(
             edge.data.condition,
             datamodelContext
           );
-          return {
+          enhancedEdge = {
             ...edge,
             data: {
               ...edge.data,
@@ -850,14 +919,14 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             },
           };
         }
-        return edge;
+        return applySelectionStyles(enhancedEdge);
       });
     }
 
     // 'available' mode - only show transitions with true or no conditions
     return fromActiveStates.filter((edge) => {
       if (!edge.data?.condition) {
-        return true; // No condition means always available
+        return applySelectionStyles(edge); // No condition means always available
       }
 
       const evaluationResult = ConditionEvaluator.evaluateCondition(
@@ -867,18 +936,25 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
       // Include edge with evaluation result
       if (evaluationResult !== false) {
-        return {
+        const enhancedEdge = {
           ...edge,
           data: {
             ...edge.data,
             conditionEvaluated: evaluationResult,
           },
         };
+        return applySelectionStyles(enhancedEdge);
       }
 
-      return evaluationResult !== false; // Show if true or null (can't evaluate)
+      return false; // Don't show if condition is false
     });
-  }, [edges, activeStates, transitionDisplayMode, datamodelContext]);
+  }, [
+    edges,
+    activeStates,
+    transitionDisplayMode,
+    datamodelContext,
+    selectedTransitions,
+  ]);
 
   // Enhance nodes to highlight active states
   const enhancedNodes = React.useMemo(() => {
@@ -931,16 +1007,19 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       }
       lastPositionUpdateRef.current.clear();
 
-      // Don't clear the updating flag if we're in the middle of a transition add
-      if (!isUpdatingPositionRef.current) {
-        isUpdatingPositionRef.current = false;
-      }
+      // Don't reset the updating flag if we're in the middle of any update operation
+      // This prevents position resets during node deletions and transition additions
+      // The flag will be reset by the specific operation that set it
 
       previousScxmlRef.current = scxmlContent;
 
       // When content changes, use the new positions from parsedData
-      setNodes(parsedData.nodes);
-      setEdges(parsedData.edges);
+      // But only if we're not in the middle of a position/structure update
+      if (!isUpdatingPositionRef.current) {
+        setNodes(parsedData.nodes);
+        setEdges(parsedData.edges);
+      }
+      // If we're updating (like during delete), we handle nodes directly in the operation
     } else if (nodes.length === 0 && parsedData.nodes.length > 0) {
       // Initial load case - just set the nodes
       setNodes(parsedData.nodes);
@@ -966,11 +1045,25 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         const element = doc.querySelector(`[id="${nodeId}"]`);
 
         if (element) {
-          // Get existing width and height from viz:xywh or use defaults
-          const existingViz = element.getAttribute('viz:xywh');
+          const rootElement = doc.documentElement;
+          const namespaceURI = 'urn:x-thingm:viz';
+
+          // Remove any ns1 namespace declaration if it exists
+          if (rootElement.hasAttribute('xmlns:ns1') && rootElement.getAttribute('xmlns:ns1') === namespaceURI) {
+            rootElement.removeAttribute('xmlns:ns1');
+          }
+
+          // Ensure viz namespace is declared on the root element
+          if (!rootElement.hasAttribute('xmlns:viz')) {
+            rootElement.setAttribute('xmlns:viz', namespaceURI);
+          }
+
+          // Get existing width and height from viz:xywh
           let width = 160;
           let height = 80;
 
+          // Try to get existing viz:xywh value (or any xywh with the namespace)
+          const existingViz = element.getAttribute('viz:xywh') || element.getAttributeNS(namespaceURI, 'xywh');
           if (existingViz) {
             const parts = existingViz.split(',');
             if (parts.length >= 4) {
@@ -979,17 +1072,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             }
           }
 
-          // Ensure viz namespace is declared on the root element
-          const rootElement = doc.documentElement;
-          if (!rootElement.hasAttribute('xmlns:viz')) {
-            rootElement.setAttribute('xmlns:viz', 'urn:x-thingm:viz');
-          }
+          // Remove any existing xywh attributes to avoid duplicates
+          // Remove both namespaced and non-namespaced versions
+          element.removeAttributeNS(namespaceURI, 'xywh');
+          element.removeAttribute('viz:xywh');
+          element.removeAttribute('ns1:xywh');
 
-          // Update the viz:xywh attribute with new position using setAttributeNS
-          const newVizValue = `${Math.round(x)},${Math.round(
-            y
-          )},${width},${height}`;
-          element.setAttributeNS('urn:x-thingm:viz', 'viz:xywh', newVizValue);
+          // Set the viz:xywh attribute using setAttribute (not setAttributeNS)
+          // This ensures we get viz:xywh exactly as we want it
+          const newVizValue = `${Math.round(x)},${Math.round(y)},${width},${height}`;
+          element.setAttribute('viz:xywh', newVizValue);
 
           // Serialize back to string
           const serializer = new XMLSerializer();
@@ -1168,11 +1260,13 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           const currentNodes = [...nodesRef.current];
           changes.forEach((change) => {
             if (change.type === 'position' && change.position) {
-              const nodeIndex = currentNodes.findIndex(n => n.id === change.id);
+              const nodeIndex = currentNodes.findIndex(
+                (n) => n.id === change.id
+              );
               if (nodeIndex >= 0) {
                 currentNodes[nodeIndex] = {
                   ...currentNodes[nodeIndex],
-                  position: change.position
+                  position: change.position,
                 };
               }
               positionMap.set(change.id, change.position);
@@ -1194,8 +1288,10 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
                 (n) => n.id === node.parentId
               );
               if (parentNode) {
-                const parentX = positionMap.get(node.parentId)?.x ?? parentNode.position.x;
-                const parentY = positionMap.get(node.parentId)?.y ?? parentNode.position.y;
+                const parentX =
+                  positionMap.get(node.parentId)?.x ?? parentNode.position.x;
+                const parentY =
+                  positionMap.get(node.parentId)?.y ?? parentNode.position.y;
                 absoluteX += parentX;
                 absoluteY += parentY;
               }
@@ -1250,6 +1346,9 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   );
   // Handle state click to set active state
   const handleStateClick = useCallback((stateId: string) => {
+    // Clear selected transitions when clicking a node
+    setSelectedTransitions(new Set());
+
     setActiveStates((prev) => {
       const newStates = new Set(prev);
       if (newStates.has(stateId)) {
@@ -1258,6 +1357,27 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         newStates.add(stateId);
       }
       return newStates;
+    });
+  }, []);
+
+  // Handle edge/transition click to set selected transition
+  const handleEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
+    event.stopPropagation();
+
+    // Clear active states when clicking a transition
+    setActiveStates(new Set());
+
+    setSelectedTransitions((prev) => {
+      const newTransitions = new Set(prev);
+      if (newTransitions.has(edge.id)) {
+        // If clicking the same transition, deselect it
+        newTransitions.clear();
+      } else {
+        // Clear all and select only this transition
+        newTransitions.clear();
+        newTransitions.add(edge.id);
+      }
+      return newTransitions;
     });
   }, []);
 
@@ -1375,6 +1495,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onNodeClick={(event, node) => handleStateClick(node.id)}
+          onEdgeClick={handleEdgeClick}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={true}
@@ -1458,18 +1579,20 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       {/* Global Confirmation Dialog */}
       <ConfirmationDialog
         isOpen={deleteConfirm.isOpen}
-        onClose={() => setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' })}
+        onClose={() =>
+          setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' })
+        }
         onConfirm={() => {
           if (deleteConfirm.nodeId && handleNodeDeleteRef.current) {
             handleNodeDeleteRef.current(deleteConfirm.nodeId);
           }
           setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' });
         }}
-        title="Delete State"
+        title='Delete State'
         message={`Are you sure you want to delete the state "${deleteConfirm.nodeLabel}"? This will also remove all transitions connected to this state.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        variant="danger"
+        confirmText='Delete'
+        cancelText='Cancel'
+        variant='danger'
       />
     </div>
   );

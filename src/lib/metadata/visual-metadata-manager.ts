@@ -183,7 +183,7 @@ export class VisualMetadataManager {
       ) {
         updatedElement[
           `@_${this.namespacePrefix}:xywh`
-        ] = `${x} ${y} ${width} ${height}`;
+        ] = `${x},${y},${width},${height}`;
       }
       if (metadata.layout.zIndex !== undefined) {
         updatedElement[`@_${this.namespacePrefix}:z-index`] =
@@ -403,7 +403,7 @@ export class VisualMetadataManager {
   private extractLayoutMetadata(element: any): LayoutMetadata | undefined {
     const layout: LayoutMetadata = {};
 
-    // Parse new viz:xywh format: "x y width height"
+    // Parse new viz:xywh format: "x,y,width,height" (comma-separated)
     const xywh = this.getVisualAttribute(element, 'xywh');
     if (xywh) {
       const parts = xywh.trim().split(/\s+/);
