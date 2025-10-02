@@ -8,7 +8,6 @@ import type {
 } from '@/components/diagram';
 import type {
   HierarchicalNode,
-  CompoundStateNodeData,
   HierarchicalLayout,
   LayoutStrategy,
   Rectangle,
@@ -71,7 +70,6 @@ export class SCXMLToXStateConverter {
 
     // Ensure it's a string
     if (typeof id !== 'string') {
-      console.warn(`toSafeId received non-string value:`, id);
       return String(id);
     }
 
@@ -124,8 +122,6 @@ export class SCXMLToXStateConverter {
   } {
     const errors: string[] = [];
 
-    console.log('🔍 Validating all state references...');
-
     // Collect all transitions and validate their targets
     const allTransitions: {
       sourceId: string;
@@ -133,8 +129,6 @@ export class SCXMLToXStateConverter {
       sourcePath: string;
     }[] = [];
     this.collectAllTransitionsForValidation(scxml, '', allTransitions);
-
-    console.log(`   Found ${allTransitions.length} transitions to validate`);
 
     for (const transition of allTransitions) {
       const { sourceId, targetId, sourcePath } = transition;
@@ -154,9 +148,6 @@ export class SCXMLToXStateConverter {
               availableStates.length > 5 ? '...' : ''
             }`
         );
-      } else {
-        // State exists, validate that the transition makes sense
-        console.log(`   ✓ Transition ${sourceId} → ${targetId}`);
       }
     }
 
@@ -202,11 +193,6 @@ export class SCXMLToXStateConverter {
     }
 
     const isValid = errors.length === 0;
-    console.log(
-      isValid
-        ? '✅ All state references are valid'
-        : `❌ Found ${errors.length} validation errors`
-    );
 
     return { isValid, errors };
   }
@@ -312,16 +298,8 @@ export class SCXMLToXStateConverter {
     this.idToSafeId.clear();
     this.safeIdToId.clear();
 
-    console.log('\n🔄 Starting SCXML to XState conversion...');
-    console.log('📊 Registering all states...');
     // First pass: register all states with their parent paths
     this.registerAllStates(scxml, '');
-
-    // Debug: Print complete hierarchy
-    console.log('\n📋 Complete State Hierarchy:');
-    for (const [parent, children] of this.hierarchyMap) {
-      console.log(`   ${parent} → [${children.join(', ')}]`);
-    }
 
     // Validate all state references before conversion
     const stateValidation = this.validateAllStateReferences(scxml);
@@ -388,7 +366,6 @@ export class SCXMLToXStateConverter {
     if (!config.initial && Object.keys(config.states).length > 0) {
       const firstStateId = Object.keys(config.states)[0];
       config.initial = firstStateId;
-      console.log(`Auto-setting root initial state to '${firstStateId}'`);
     }
 
     // Validate transitions
@@ -504,6 +481,10 @@ export class SCXMLToXStateConverter {
     // Position history states (but allow them to also participate in sibling layout)
     this.positionHistoryStates(allNodes);
 
+    // DON'T convert absolute positions to relative positions
+    // We're using hierarchy navigation which removes parentId for flat rendering
+    // All positions should remain absolute for correct display
+    //
     // Convert absolute positions to relative positions for nested nodes
     allNodes.forEach((node) => {
       if (node.parentId) {
@@ -511,19 +492,12 @@ export class SCXMLToXStateConverter {
         if (parent) {
           const hasVizPosition = (node.data as any).hasVizPosition === true;
 
-          // For nodes with viz positions, convert from absolute to relative
-          // For auto-laid out nodes, they're already relative
+          // For nodes with viz positions, keep them absolute (don't convert to relative)
+          // because hierarchy navigation removes parentId and treats all nodes as root-level
           if (hasVizPosition) {
-            const originalPos = { ...node.position };
-            // Make position relative to parent (0,0 is parent's top-left corner)
-            node.position = {
-              x: node.position.x - parent.position.x,
-              y: node.position.y - parent.position.y,
-            };
-
-            console.log(
-              `[CONVERT] ${node.id}: absolute(${originalPos.x}, ${originalPos.y}) -> relative(${node.position.x}, ${node.position.y}) [parent ${parent.id} at (${parent.position.x}, ${parent.position.y})]`
-            );
+            // SKIP conversion - keep absolute position
+          } else {
+            // For auto-laid out nodes, they're already relative - keep as is
           }
 
           // Add extent to constrain child within parent bounds
@@ -553,20 +527,8 @@ export class SCXMLToXStateConverter {
     // Use all nodes with native parent-child relationships
     const finalNodes = allNodes;
 
-    // Set childCount for group nodes
-    allNodes.forEach((node) => {
-      if ((node.type as any) === 'group') {
-        const children = allNodes.filter((n) => n.parentId === node.id);
-        (node.data as any).childCount = children.length;
-
-        // Don't set explicit dimensions - let ReactFlow handle with expandParent
-        // Remove any style dimensions that were set
-        if (node.style) {
-          delete node.style.width;
-          delete node.style.height;
-        }
-      }
-    });
+    // All nodes now use scxmlState type
+    // State classification is handled via data.stateType property
 
     // Remove proxy node creation helpers - no longer needed
 
@@ -620,17 +582,17 @@ export class SCXMLToXStateConverter {
     const exitActions = onexit ? this.extractActionsText(onexit) : [];
 
     // Determine node type
-    let nodeType = 'scxmlState'; // Use custom type for SCXML states
+    // Most states use 'scxmlState' type, history states use 'scxmlHistory'
+    // State classification is handled via data.stateType
+    let nodeType: 'scxmlState' | 'scxmlHistory' = 'scxmlState';
     let stateType: SCXMLStateNodeData['stateType'] = 'simple';
 
     if (stateInfo.elementType === 'parallel') {
-      nodeType = 'group'; // Use ReactFlow's group type
       stateType = 'parallel';
     } else if (stateInfo.elementType === 'history') {
       nodeType = 'scxmlHistory'; // Keep history wrapper as special type
       stateType = 'simple';
     } else if (isContainer) {
-      nodeType = 'group'; // Use ReactFlow's group type
       stateType = 'compound';
     } else if (state['@_type'] === 'final') {
       stateType = 'final';
@@ -639,12 +601,11 @@ export class SCXMLToXStateConverter {
     // Check if this is an initial state
     const isInitial = this.isInitialState(stateId, stateInfo.parentPath);
 
-    // Calculate initial position - defer to auto-layout if viz metadata is available
-    // The viz position will be applied later during layout processing
+    // Calculate initial position from viz:xywh or auto-calculate
     let position: { x: number; y: number };
     if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
-      // Use a temporary position, actual viz position will be applied in layout
-      position = { x: 0, y: 0 };
+      // Use position from viz:xywh
+      position = { x: visualMetadata.x, y: visualMetadata.y };
     } else {
       position = this.calculateInitialPosition(stateId, stateInfo);
     }
@@ -669,20 +630,9 @@ export class SCXMLToXStateConverter {
       depth: stateInfo.depth,
     };
 
-    // If this is a container, add container-specific data
+    // If this is a container, store children array for reference
     if (isContainer) {
-      const containerData: CompoundStateNodeData = {
-        ...baseNodeData,
-        children: stateInfo.children,
-        containerMetadata: {
-          childLayout: 'auto',
-          padding: 20,
-          minSize: { width: 200, height: 150 },
-          isCollapsible: true,
-          isExpanded: true,
-        },
-      };
-      node.data = containerData;
+      (node.data as any).children = stateInfo.children;
     }
 
     // Store viz metadata for position tracking in auto-layout
@@ -691,9 +641,6 @@ export class SCXMLToXStateConverter {
       (node.data as any).vizX = visualMetadata.x;
       (node.data as any).vizY = visualMetadata.y;
       (node.data as any).hasVizPosition = true; // Flag to indicate viz position exists
-      console.log(
-        `[CREATE] ${node.id}: viz metadata stored - vizX=${visualMetadata.x}, vizY=${visualMetadata.y}, hasVizPosition=true`
-      );
     }
 
     // Don't apply viz:xywh width/height to avoid affecting node sizing
@@ -802,9 +749,6 @@ export class SCXMLToXStateConverter {
               x: (container.data as any).vizX,
               y: (container.data as any).vizY,
             };
-            console.log(
-              `[CONTAINER] ${container.id} using viz position: (${container.position.x}, ${container.position.y})`
-            );
           }
 
           const containerWidth = (container.data as any).width || 250;
@@ -852,16 +796,12 @@ export class SCXMLToXStateConverter {
               x: currentX,
               y: currentY + 60, // Header offset
             };
-            console.log(`AUTO-POSITIONING ${state.id}:`, state.position);
           } else {
             // Use viz position (will be converted to relative later)
             state.position = {
               x: (state.data as any).vizX,
               y: (state.data as any).vizY,
             };
-            console.log(
-              `[STATE] ${state.id} using viz position: (${state.position.x}, ${state.position.y})`
-            );
           }
 
           currentX += actualWidth + 50; // Increased horizontal spacing from 30 to 50
@@ -1033,7 +973,7 @@ export class SCXMLToXStateConverter {
         actions: {
           // Default SCXML actions
           log: ({ context, event }, params: any) => {
-            console.log('SCXML Log:', params);
+            // SCXML log action
           },
           assign: ({ context }, params: any) => {
             return { ...context, ...params };
@@ -1098,7 +1038,6 @@ export class SCXMLToXStateConverter {
     const stateId = this.getAttribute(state, 'id');
     if (!stateId) return null;
 
-    console.log(`\n🔄 Converting state '${stateId}' to XState config...`);
     const stateConfig: any = {};
 
     // Handle entry actions
@@ -1126,9 +1065,6 @@ export class SCXMLToXStateConverter {
         const childStatesArray = Array.isArray(childStates)
           ? childStates
           : [childStates];
-        console.log(
-          `   📂 Processing ${childStatesArray.length} child states for '${stateId}'`
-        );
         for (const childState of childStatesArray) {
           const childConfig = this.convertState(childState);
           const childId = this.getAttribute(childState, 'id');
@@ -1136,9 +1072,6 @@ export class SCXMLToXStateConverter {
             const safeChildId = this.toSafeId(childId);
             if (safeChildId) {
               stateConfig.states[safeChildId] = childConfig;
-              console.log(
-                `   ✓ Added '${childId}' (safe: '${safeChildId}') to '${stateId}'.states`
-              );
             }
           }
         }
@@ -1216,9 +1149,6 @@ export class SCXMLToXStateConverter {
         const firstChildId = this.getAttribute(childStates[0], 'id');
         if (firstChildId) {
           stateConfig.initial = this.toSafeId(firstChildId);
-          console.log(
-            `Auto-setting initial state for '${stateId}' to '${firstChildId}'`
-          );
         }
       }
     }
@@ -1239,9 +1169,6 @@ export class SCXMLToXStateConverter {
         if (target) {
           // Build current state path for proper resolution
           const currentStatePath = this.buildStatePath(stateId);
-          console.log(
-            `   🎯 Processing transition from '${stateId}' to '${target}'`
-          );
           const resolvedTarget = this.resolveTarget(target, currentStatePath);
           const transitionConfig: any = { target: resolvedTarget };
 
@@ -1412,9 +1339,6 @@ export class SCXMLToXStateConverter {
     ) {
       // Check if the target is a child of this source
       if (sourceState.children.includes(finalTargetId!)) {
-        console.log(
-          `Skipping parent-to-child transition: ${sourceStateId} -> ${finalTargetId}`
-        );
         return null;
       }
     }
@@ -1596,7 +1520,6 @@ export class SCXMLToXStateConverter {
 
     // Parse viz:xywh format: "x,y,width,height" (comma-separated)
     if (vizXywh && typeof vizXywh === 'string') {
-      console.log(`[EXTRACT] ${elementId}: found viz:xywh="${vizXywh}"`);
       const parts = vizXywh
         .trim()
         .split(',')
@@ -1606,12 +1529,7 @@ export class SCXMLToXStateConverter {
         metadata.y = parseFloat(parts[1]);
         metadata.width = parseFloat(parts[2]);
         metadata.height = parseFloat(parts[3]);
-        console.log(
-          `[EXTRACT] ${elementId}: parsed position (${metadata.x}, ${metadata.y}) size (${metadata.width}x${metadata.height})`
-        );
       }
-    } else {
-      console.log(`[EXTRACT] ${elementId}: no viz:xywh found`);
     }
 
     // Parse viz:rgb for fill color - store as style for now
@@ -1875,15 +1793,6 @@ export class SCXMLToXStateConverter {
         ? parentPath.split('#').length
         : 0;
 
-    // Debug logging
-    if (parentId) {
-      console.log(
-        `📁 Registering children of '${parentId}' (path: '${parentPath}')`
-      );
-    } else {
-      console.log(`📁 Registering root level states`);
-    }
-
     // Initialize parent's children array if not exists
     if (parentId && !this.hierarchyMap.has(parentId)) {
       this.hierarchyMap.set(parentId, []);
@@ -1916,11 +1825,6 @@ export class SCXMLToXStateConverter {
           if (parentId) {
             this.hierarchyMap.get(parentId)?.push(stateId);
             this.parentMap.set(stateId, parentId);
-            console.log(
-              `   ✓ Registered '${stateId}' as child of '${parentId}'`
-            );
-          } else {
-            console.log(`   ✓ Registered '${stateId}' at root level`);
           }
 
           // Recursively register nested states FIRST (depth-first)
@@ -1936,12 +1840,6 @@ export class SCXMLToXStateConverter {
 
             // Mark these children as claimed so parent states won't claim them
             childStates.forEach((childId) => this.claimedStates.add(childId));
-
-            console.log(
-              `   → '${stateId}' has ${
-                childStates.length
-              } children: [${childStates.join(', ')}]`
-            );
           }
         }
       }
@@ -2043,13 +1941,10 @@ export class SCXMLToXStateConverter {
     const childIds: string[] = [];
     const elementId = this.getAttribute(element, 'id') || 'unknown';
 
-    console.log(`   🔍 Collecting direct children of '${elementId}'...`);
-
     // Collect child states - only those not already claimed
     const states = this.getElements(element, 'state');
     if (states) {
       const statesArray = Array.isArray(states) ? states : [states];
-      console.log(`      Found ${statesArray.length} <state> elements`);
 
       for (const state of statesArray) {
         const stateId = this.getAttribute(state, 'id');
@@ -2058,11 +1953,6 @@ export class SCXMLToXStateConverter {
         // Only add if not already claimed by another parent
         if (!this.claimedStates.has(stateId)) {
           childIds.push(stateId);
-          console.log(`      + Added DIRECT child state: '${stateId}'`);
-        } else {
-          console.log(
-            `      - Skipped CLAIMED state: '${stateId}' (already has a parent)`
-          );
         }
       }
     }
@@ -2079,11 +1969,6 @@ export class SCXMLToXStateConverter {
         // Only add if not already claimed by another parent
         if (!this.claimedStates.has(parallelId)) {
           childIds.push(parallelId);
-          console.log(`      + Added DIRECT child parallel: '${parallelId}'`);
-        } else {
-          console.log(
-            `      - Skipped CLAIMED parallel: '${parallelId}' (already has a parent)`
-          );
         }
       }
     }
@@ -2100,11 +1985,6 @@ export class SCXMLToXStateConverter {
         // Only add if not already claimed by another parent
         if (!this.claimedStates.has(historyId)) {
           childIds.push(historyId);
-          console.log(`      + Added DIRECT child history: '${historyId}'`);
-        } else {
-          console.log(
-            `      - Skipped CLAIMED history: '${historyId}' (already has a parent)`
-          );
         }
       }
     }
@@ -2256,8 +2136,6 @@ export class SCXMLToXStateConverter {
   ): string {
     if (!targetId) return targetId;
 
-    console.log(`🎯 Resolving: '${targetId}' from '${currentStatePath}'`);
-
     // Verify target exists in registry
     const targetInfo = this.stateRegistry.get(targetId);
     if (!targetInfo) {
@@ -2276,7 +2154,6 @@ export class SCXMLToXStateConverter {
 
     // Build the relative path from current state to target
     const relativePath = this.buildRelativePath(currentStateId, targetId);
-    console.log(`   ✓ Resolved path: '${relativePath}'`);
     return relativePath;
   }
 
@@ -2297,14 +2174,7 @@ export class SCXMLToXStateConverter {
     const sourceParent = this.getParent(sourceId);
     const targetParent = this.getParent(targetId);
 
-    console.log(`   → Checking sibling relationship:`);
-    console.log(`     Source '${sourceId}' parent: '${sourceParent}'`);
-    console.log(`     Target '${targetId}' parent: '${targetParent}'`);
-
     if (sourceParent && sourceParent === targetParent) {
-      console.log(
-        `   → ✓ Target is direct sibling (same parent: '${sourceParent}')`
-      );
       const safeTarget = this.toSafeId(targetId) || targetId;
 
       // IMPORTANT: For transitions defined at compound state level to siblings,
@@ -2312,23 +2182,11 @@ export class SCXMLToXStateConverter {
       // Check if source is a compound state with children
       const sourceIsCompound = this.getChildren(sourceId).length > 0;
       if (sourceIsCompound) {
-        console.log(
-          `   → Source '${sourceId}' is a compound state, using '../${safeTarget}'`
-        );
         return '../' + safeTarget;
       }
 
       return safeTarget;
     }
-
-    // Case 2.5: Check if source and target share the same parent but source check failed
-    // This shouldn't happen but let's be defensive
-    if (!sourceParent && targetParent) {
-      // Source might be at root but target has parent
-      console.log(`   → Source at root, target has parent`);
-    }
-
-    console.log(`   → ✗ Not direct siblings`);
 
     // Case 3: Complex navigation - find lowest common ancestor
     const commonAncestor = this.findLowestCommonAncestor(sourceId, targetId);

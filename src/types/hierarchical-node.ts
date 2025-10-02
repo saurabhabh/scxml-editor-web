@@ -1,6 +1,9 @@
 import type { Node, Edge } from 'reactflow';
 import type { SCXMLStateNodeData } from '@/components/diagram/nodes/scxml-state-node';
 
+/**
+ * @deprecated - Legacy type for nested rendering (not used with hierarchy navigation)
+ */
 export interface ContainerMetadata {
   childLayout: 'auto' | 'grid' | 'manual';
   padding: number;
@@ -9,6 +12,9 @@ export interface ContainerMetadata {
   isExpanded: boolean;
 }
 
+/**
+ * @deprecated - Legacy type for CompoundStateNode (removed - use SCXMLStateNode with data.stateType instead)
+ */
 export interface CompoundStateNodeData extends SCXMLStateNodeData {
   children: string[]; // Child state IDs
   containerMetadata: ContainerMetadata;
@@ -17,12 +23,20 @@ export interface CompoundStateNodeData extends SCXMLStateNodeData {
   childCount?: number; // Number of child nodes (for new format)
 }
 
+/**
+ * @deprecated - Legacy type for parallel state nested rendering (not used)
+ */
 export interface ParallelStateNodeData extends CompoundStateNodeData {
   parallelRegions: string[][]; // Groups of parallel child state IDs
 }
 
+/**
+ * Hierarchical node structure with parent-child relationships
+ * All nodes use SCXMLStateNode component with type='scxmlState'
+ * State classification handled via data.stateType property
+ */
 export interface HierarchicalNode extends Node {
-  data: SCXMLStateNodeData | CompoundStateNodeData | ParallelStateNodeData;
+  data: SCXMLStateNodeData;
   parentId?: string;
   childIds?: string[];
   depth: number;

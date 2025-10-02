@@ -3,15 +3,18 @@
 ## REVISED Implementation Plan - Hierarchy Navigation as TOP PRIORITY
 
 ### **PRIORITY 1: Hierarchical Navigation System**
+
 **This fundamentally changes how the diagram displays states - only showing one level at a time**
 
 #### Core Concept:
+
 - Initially show only root level states (direct children of `<scxml>`)
 - Users navigate into compound states to see their children
 - Only one hierarchy level visible at a time
 - Navigate up/down through the hierarchy using toolbar buttons and node interactions
 
 #### Example Navigation Flow:
+
 ```
 Level 0: <scxml> root
 User sees: stateA, stateB, stateC
@@ -33,27 +36,31 @@ User navigated into stateB2, sees: stateB2a, stateB2b
 #### Technical Implementation:
 
 1. **Store Hierarchy State** (`src/stores/editor-store.ts`)
+
    ```typescript
    interface HierarchyState {
-     currentPath: string[];        // ['stateB', 'stateB2']
-     currentParentId: string | null;  // Current container we're inside
-     navigationHistory: string[][];   // For back navigation
-     visibleNodes: Set<string>;      // IDs of nodes to show at current level
+     currentPath: string[]; // ['stateB', 'stateB2']
+     currentParentId: string | null; // Current container we're inside
+     navigationHistory: string[][]; // For back navigation
+     visibleNodes: Set<string>; // IDs of nodes to show at current level
    }
    ```
 
 2. **Modify Visual Diagram** (`src/components/diagram/visual-diagram.tsx`)
+
    - Filter nodes to only show current level children
    - Hide all nodes outside current hierarchy level
    - Show only edges between visible nodes
    - Add breadcrumb navigation display
 
 3. **Update Toolbar Controls**
+
    - Add "↑" (Up Arrow) button to navigate up one level
    - Add "S" (New State) button that creates states at current level
    - Show current hierarchy path in toolbar (e.g., "scxml > stateB > stateB2")
 
 4. **Node Visual Indicators**
+
    - Compound states: Dashed border (has children inside)
    - Simple states: Solid border (no children)
    - Add descend icon (↓) in bottom-right corner on hover for compound states
@@ -67,12 +74,15 @@ User navigated into stateB2, sees: stateB2a, stateB2b
 ### **PRIORITY 2: Undo/Redo System**
 
 #### Implementation:
+
 - **Command Pattern Architecture**
+
   - Create `UndoRedoManager` class with action stack
   - Define action types: Create, Delete, Move, Rename, Edit
   - Store before/after states for each action
 
 - **Keyboard Shortcuts**
+
   - Ctrl+Z for undo
   - Ctrl+Y for redo
   - Ctrl+Shift+Z as alternative redo
@@ -84,10 +94,20 @@ User navigated into stateB2, sees: stateB2a, stateB2b
 
 ### **PRIORITY 3: Delete Without Confirmation**
 
-- Remove confirmation dialog for keyboard delete (Delete key)
-- Support multi-selection deletion
-- Keep confirmation for toolbar delete button (safety for mouse actions)
-- Integrate with undo system for easy recovery
+- ✅ Fixed: Nodes can now be deleted using Delete/Backspace key
+- ✅ Removed confirmation dialog for keyboard delete or trash icon (Delete key)
+- ✅ Support multi-selection deletion for nodes
+- ✅ Integrated with undo system for easy recovery
+
+**Implementation Notes:**
+
+- Modified `handleNodeDelete` to accept both single string and array of node IDs
+- Removed `deleteConfirm` state and `handleNodeDeleteWrapper` function
+- Removed `ConfirmationDialog` component import and usage from visual-diagram.tsx
+- Deletion now happens immediately without confirmation
+- Multi-node selection deletion is supported through ReactFlow's native multi-select
+- Trash icon on nodes calls `handleNodeDelete` directly without confirmation
+- Undo/redo integration works automatically via existing `onSCXMLChange` callback with `changeType: 'structure'`
 
 ### **PRIORITY 4: Edit State Name in Visual Diagram**
 
@@ -135,6 +155,7 @@ User navigated into stateB2, sees: stateB2a, stateB2b
 ## Technical Implementation Details
 
 ### File Structure:
+
 ```
 New Files:
 - src/hooks/use-hierarchy-navigation.ts
@@ -160,11 +181,11 @@ Modified Files:
 function getVisibleNodes(allNodes: Node[], hierarchyState: HierarchyState) {
   if (!hierarchyState.currentParentId) {
     // Show root level - states without parents
-    return allNodes.filter(node => !node.parentId);
+    return allNodes.filter((node) => !node.parentId);
   }
   // Show children of current parent
-  return allNodes.filter(node =>
-    node.parentId === hierarchyState.currentParentId
+  return allNodes.filter(
+    (node) => node.parentId === hierarchyState.currentParentId
   );
 }
 
@@ -223,6 +244,7 @@ class UndoRedoManager {
 ## Implementation Timeline
 
 ### Day 1-2: Hierarchy Navigation (Critical)
+
 - Implement hierarchy state management
 - Add filtering logic for single-level display
 - Create navigation controls (up button, descend icon)
@@ -230,18 +252,21 @@ class UndoRedoManager {
 - Add breadcrumb navigation
 
 ### Day 2-3: Undo/Redo System
+
 - Implement UndoRedoManager
 - Create action classes for each operation
 - Add keyboard shortcuts
 - Integrate with both editors
 
 ### Day 3-4: Remaining Features
+
 - Delete without confirmation
 - Edit state name in diagram
 - Transition label enhancements
 - Enhanced type completion
 
 ### Day 4-5: Testing & Polish
+
 - Collapse/expand in editor
 - New state button improvements
 - Bug fixes and edge cases

@@ -2,7 +2,6 @@
 'use client';
 
 // ==================== IMPORTS ====================
-import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { useHierarchyNavigation } from '@/hooks/use-hierarchy-navigation';
 import { SCXMLToXStateConverter } from '@/lib/converters/scxml-to-xstate';
 import { VisualMetadataManager } from '@/lib/metadata';
@@ -50,7 +49,6 @@ import {
 import 'reactflow/dist/style.css';
 import { SimulationControls } from '../simulation';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
-import { GroupNode } from './nodes/group-node';
 import { HistoryWrapperNode } from './nodes/history-wrapper-node';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
 
@@ -59,7 +57,10 @@ interface VisualDiagramProps {
   scxmlContent: string;
   onNodeChange?: (nodes: Node[]) => void;
   onEdgeChange?: (edges: Edge[]) => void;
-  onSCXMLChange?: (scxmlContent: string, changeType?: 'position' | 'structure' | 'property') => void;
+  onSCXMLChange?: (
+    scxmlContent: string,
+    changeType?: 'position' | 'structure' | 'property'
+  ) => void;
   isUpdatingFromHistory?: boolean;
 }
 
@@ -67,7 +68,6 @@ interface VisualDiagramProps {
 // Custom node types for SCXML elements
 const nodeTypes: NodeTypes = {
   scxmlState: SCXMLStateNode,
-  group: GroupNode,
   scxmlHistory: HistoryWrapperNode,
 };
 
@@ -165,15 +165,12 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   const [selectedTransitions, setSelectedTransitions] = React.useState<
     Set<string>
   >(new Set());
-  const [deleteConfirm, setDeleteConfirm] = React.useState<{
-    isOpen: boolean;
-    nodeId: string;
-    nodeLabel: string;
-  }>({
-    isOpen: false,
-    nodeId: '',
-    nodeLabel: '',
-  });
+  const [hoveredEdge, setHoveredEdge] = React.useState<{
+    id: string;
+    fullLabel: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // ==================== REFS ====================
   // Position update management
@@ -183,11 +180,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   const lastPositionUpdateRef = React.useRef<
     Map<string, { x: number; y: number }>
   >(new Map());
+  const isDraggingRef = React.useRef<Set<string>>(new Set()); // Track nodes being dragged
 
   // Handler refs for callbacks
-  const handleChildAddRef = React.useRef<((parentId: string) => void) | null>(
-    null
-  );
   const handleNodeDeleteRef = React.useRef<((nodeId: string) => void) | null>(
     null
   );
@@ -199,6 +194,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
   // ReactFlow state refs for isolated handler
   const nodesRef = React.useRef(nodes);
+  const allNodesRef = React.useRef<Node[]>([]); // Store original nodes with parentId
   const onNodesChangeRef = React.useRef(onNodesChange);
   const handleNodePositionChangeRef = React.useRef<any>(null);
 
@@ -278,36 +274,26 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     [scxmlContent, onSCXMLChange]
   );
 
-  const handleChildrenToggle = React.useCallback(
-    (nodeId: string, isExpanded: boolean) => {
-      // TODO: Optionally sync this state to visual metadata/SCXML
-    },
-    []
-  );
-
   // ==================== NODE DELETION HANDLERS ====================
-  const handleNodeDeleteWrapper = React.useCallback(
-    (nodeId: string, nodeLabel: string) => {
-      setDeleteConfirm({
-        isOpen: true,
-        nodeId,
-        nodeLabel,
-      });
-    },
-    []
-  );
-
   const handleNodeDelete = React.useCallback(
-    (nodeId: string) => {
+    (nodeIds: string | string[]) => {
       if (!parserRef.current || !onSCXMLChange) return;
+
+      const idsToDelete = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
 
       try {
         const parseResult = parserRef.current.parse(scxmlContent);
         if (parseResult.success && parseResult.data) {
           const scxmlDoc = parseResult.data;
-          removeStateFromDocument(scxmlDoc, nodeId);
+
+          // Delete all specified nodes
+          idsToDelete.forEach((nodeId) => {
+            removeStateFromDocument(scxmlDoc, nodeId);
+          });
+
           const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
           onSCXMLChange(updatedSCXML, 'structure');
+          setActiveStates(new Set());
         }
       } catch (error) {
         console.error('Failed to delete node:', error);
@@ -315,15 +301,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     },
     [scxmlContent, onSCXMLChange]
   );
-
-  // ==================== NODE ADDITION HANDLERS ====================
-  const handleChildAdd = React.useCallback((parentId: string) => {
-    if (handleChildAddRef.current) {
-      handleChildAddRef.current(parentId);
-    } else {
-      console.log('Child add handler not yet initialized');
-    }
-  }, []);
 
   // ==================== POSITION UPDATE HANDLERS ====================
   const handleNodePositionChange = React.useCallback(
@@ -415,6 +392,24 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       }
       return newTransitions;
     });
+  }, []);
+
+  const handleEdgeMouseEnter = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      if (edge.data?.fullLabel) {
+        setHoveredEdge({
+          id: edge.id,
+          fullLabel: edge.data.fullLabel,
+          x: event.clientX,
+          y: event.clientY,
+        });
+      }
+    },
+    []
+  );
+
+  const handleEdgeMouseLeave = useCallback(() => {
+    setHoveredEdge(null);
   }, []);
 
   const handleEdgesChange = useCallback(
@@ -550,15 +545,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       );
 
       if (removeChanges.length > 0) {
-        removeChanges.forEach((change) => {
-          const nodeToDelete = nodes.find((n) => n.id === change.id);
-          if (nodeToDelete) {
-            handleNodeDeleteWrapper(
-              change.id,
-              nodeToDelete.data?.label || change.id
-            );
-          }
-        });
+        // Delete all selected nodes directly without confirmation
+        const nodeIdsToDelete = removeChanges.map((change) => change.id);
+        handleNodeDelete(nodeIdsToDelete);
+
         const nonRemoveChanges = changes.filter(
           (change) => change.type !== 'remove'
         );
@@ -568,15 +558,42 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         return;
       }
 
+      // Track dragging state across change events
+      changes.forEach((change) => {
+        if (change.type === 'position') {
+          if (change.dragging === true) {
+            // User is actively dragging this node
+            isDraggingRef.current.add(change.id);
+          }
+        }
+      });
+
+      // Pass changes to ReactFlow for visual updates
       onNodesChangeRef.current(changes);
 
-      const positionChanges = changes.filter(
+      // Check for position changes where dragging ended
+      const dragEndChanges = changes.filter(
         (change) => change.type === 'position' && change.dragging === false
       );
 
-      if (positionChanges.length === 0) {
+      if (dragEndChanges.length === 0) {
         return;
       }
+
+      // Only process nodes that were actually dragged
+      const positionChanges = dragEndChanges.filter((change) =>
+        isDraggingRef.current.has(change.id)
+      );
+
+      if (positionChanges.length === 0) {
+        // This was a click, not a drag - don't update SCXML
+        return;
+      }
+
+      // Remove nodes from dragging set since drag has ended
+      positionChanges.forEach((change) => {
+        isDraggingRef.current.delete(change.id);
+      });
 
       if (isUpdatingPositionRef.current) {
         return;
@@ -617,34 +634,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             const node = currentNodes.find((n) => n.id === change.id);
             if (!node?.position) continue;
 
+            // In hierarchy navigation mode, positions are always absolute
+            // because parentId is removed from filtered nodes (see use-hierarchy-navigation.ts:45)
+            // The position we get from ReactFlow is already the correct absolute position
             let absoluteX = positionMap.get(change.id)?.x ?? node.position.x;
             let absoluteY = positionMap.get(change.id)?.y ?? node.position.y;
-
-            // ReactFlow uses relative positions for nested nodes
-            // We need absolute positions for viz:xywh
-            if (node.parentId) {
-              // Find all ancestors to calculate absolute position
-              let currentNode = node;
-              let ancestors = [];
-
-              while (currentNode.parentId) {
-                const parent = currentNodes.find(n => n.id === currentNode.parentId);
-                if (!parent) break;
-                ancestors.push(parent);
-                currentNode = parent;
-              }
-
-              // Add parent positions from root to immediate parent
-              for (let i = ancestors.length - 1; i >= 0; i--) {
-                const ancestor = ancestors[i];
-                const ancestorPos = positionMap.get(ancestor.id) ?? ancestor.position;
-                // Skip negative positions (uninitialized)
-                if (ancestorPos.x >= 0 && ancestorPos.y >= 0) {
-                  absoluteX += ancestorPos.x;
-                  absoluteY += ancestorPos.y;
-                }
-              }
-            }
 
             const lastPos = lastPositionUpdateRef.current.get(change.id);
             if (
@@ -673,7 +667,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         }
       }, 150);
     },
-    [nodes, handleNodeDeleteWrapper]
+    [nodes, handleNodeDelete]
   );
 
   // ==================== SCXML PARSING ====================
@@ -767,12 +761,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               handleNodeStateTypeChange(node.id, newStateType),
             onActionsChange: (entryActions: string[], exitActions: string[]) =>
               handleNodeActionsChange(node.id, entryActions, exitActions),
-            onDelete: () =>
-              handleNodeDeleteWrapper(node.id, node.data?.label || node.id),
-            onChildrenToggle:
-              nodeUpdate.type === 'group' ? handleChildrenToggle : undefined,
-            onChildAdd:
-              nodeUpdate.type === 'group' ? handleChildAdd : undefined,
+            onDelete: () => handleNodeDelete(node.id),
           };
 
           return nodeUpdate;
@@ -839,9 +828,30 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             };
           }
 
+          // Build label content with event and condition
+          const getLabelContent = () => {
+            const parts: string[] = [];
+            if (edge.data?.event) parts.push(`${edge.data.event}`);
+            if (edge.data?.condition) parts.push(`[${edge.data.condition}]`);
+            if (edge.data?.actions?.length > 0)
+              parts.push(`/ ${edge.data.actions.length} action${edge.data.actions.length > 1 ? 's' : ''}`);
+            return parts.join(' ');
+          };
+
+          const fullLabel = getLabelContent();
+          const truncateLabel = (text: string, maxLength: number = 10) => {
+            if (text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+          };
+
           const edgeUpdate: any = {
             ...edge,
             type: edgeType,
+            label: truncateLabel(fullLabel),
+            data: {
+              ...edge.data,
+              fullLabel,
+            },
             pathOptions,
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -866,6 +876,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               fill: '#fff',
               fontWeight: 600,
               fontSize: 12,
+              cursor: 'pointer',
             },
             labelBgStyle: {
               fill: edge.labelBgStyle?.fill || '#3b82f6',
@@ -873,6 +884,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             },
             labelBgPadding: [6, 4] as [number, number],
             labelBgBorderRadius: 4,
+            interactionWidth: 30,
           };
 
           if (edgeMetadata) {
@@ -944,9 +956,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     handleNodeLabelChange,
     handleNodeActionsChange,
     handleNodeStateTypeChange,
-    handleNodeDeleteWrapper,
-    handleChildrenToggle,
-    handleChildAdd,
+    handleNodeDelete,
   ]);
 
   // ==================== HIERARCHY NAVIGATION ====================
@@ -965,6 +975,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     allNodes: parsedData.nodes,
     allEdges: parsedData.edges,
   });
+
+  // Update allNodesRef with original nodes (with parentId intact)
+  allNodesRef.current = parsedData.nodes;
 
   const navigateWithFitView = useCallback(
     (navigationFn: () => void) => {
@@ -1143,14 +1156,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         },
         style: {
           ...node.style,
-          ...(isActive
-            ? {
-                borderWidth: 3,
-                borderStyle: 'solid',
-                borderColor: '#3b82f6',
-                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.3)',
-              }
-            : {}),
         },
       });
     });
@@ -1233,149 +1238,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   React.useEffect(() => {
     handleNodeDeleteRef.current = handleNodeDelete;
   }, [handleNodeDelete]);
-
-  // Define child add handler implementation
-  React.useEffect(() => {
-    handleChildAddRef.current = (parentId: string) => {
-      if (!onSCXMLChange) {
-        console.error('onSCXMLChange not available');
-        return;
-      }
-
-      try {
-        let newStateId = 'state_1';
-        let counter = 1;
-        const existingIds = new Set(parsedData.nodes.map((n) => n.id));
-        while (existingIds.has(newStateId)) {
-          counter++;
-          newStateId = `state_${counter}`;
-        }
-
-        const childNodes = parsedData.nodes.filter(
-          (node) => node.parentId === parentId
-        );
-
-        let x = 50;
-        let y = 100;
-
-        if (childNodes.length > 0) {
-          const cols = 4;
-          const rowHeight = 120;
-          const colWidth = 200;
-
-          const existingPositions = childNodes.map((n) => ({
-            col: Math.floor((n.position?.x || 0) / colWidth),
-            row: Math.floor(((n.position?.y || 0) - 100) / rowHeight),
-          }));
-
-          let found = false;
-          for (let row = 0; row < 10 && !found; row++) {
-            for (let col = 0; col < cols && !found; col++) {
-              const occupied = existingPositions.some(
-                (p) => p.col === col && p.row === row
-              );
-              if (!occupied) {
-                x = 50 + col * colWidth;
-                y = 100 + row * rowHeight;
-                found = true;
-              }
-            }
-          }
-        }
-
-        const newNode = {
-          id: newStateId,
-          type: 'scxmlState',
-          position: { x, y },
-          parentId: parentId,
-          data: {
-            label: newStateId,
-            stateType: 'simple' as const,
-            onLabelChange: handleNodeLabelChange,
-            onDelete: () => handleNodeDeleteWrapper(newStateId, newStateId),
-          },
-          style: {
-            width: 160,
-            height: 80,
-          },
-        };
-
-        setNodes((nodes) => [...nodes, newNode]);
-
-        if (onSCXMLChange && scxmlContent) {
-          try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(scxmlContent, 'text/xml');
-            const parentElement = doc.querySelector(`[id="${parentId}"]`);
-
-            if (parentElement) {
-              const rootElement = doc.documentElement;
-              const namespaceURI = VISUAL_METADATA_CONSTANTS.NAMESPACE_URI;
-
-              if (
-                rootElement.hasAttribute('xmlns:ns1') &&
-                rootElement.getAttribute('xmlns:ns1') === namespaceURI
-              ) {
-                rootElement.removeAttribute('xmlns:ns1');
-              }
-
-              if (!rootElement.hasAttribute('xmlns:viz')) {
-                rootElement.setAttribute('xmlns:viz', namespaceURI);
-              }
-
-              const parentNamespace = parentElement.namespaceURI;
-              const newStateElement = doc.createElementNS(
-                parentNamespace,
-                'state'
-              );
-
-              newStateElement.setAttribute('id', newStateId);
-              newStateElement.setAttribute('viz:xywh', `${x},${y},160,80`);
-
-              parentElement.appendChild(newStateElement);
-
-              const serializer = new XMLSerializer();
-              const updatedSCXML = serializer.serializeToString(doc);
-
-              isUpdatingPositionRef.current = true;
-              previousScxmlRef.current = updatedSCXML;
-
-              onSCXMLChange(updatedSCXML, 'structure');
-
-              setTimeout(() => {
-                isUpdatingPositionRef.current = false;
-                setTimeout(() => {
-                  fitView({
-                    padding: 0.3,
-                    includeHiddenNodes: false,
-                    minZoom: 0.5,
-                    maxZoom: 2,
-                    duration: 600,
-                  });
-                }, 100);
-              }, 100);
-
-              console.log('Successfully added new child state:', newStateId);
-            } else {
-              console.error('Parent element not found in SCXML:', parentId);
-            }
-          } catch (xmlError) {
-            console.error('Failed to update SCXML:', xmlError);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to add child state:', error);
-      }
-    };
-  }, [
-    parsedData.nodes,
-    onSCXMLChange,
-    handleNodeLabelChange,
-    handleNodeDeleteWrapper,
-    setNodes,
-    scxmlContent,
-    fitView,
-  ]);
 
   // Initialize nodes and edges when SCXML content changes
   React.useEffect(() => {
@@ -1492,11 +1354,19 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         const edgeId = Array.from(selectedTransitions)[0];
         handleEdgesChange([{ id: edgeId, type: 'remove' }]);
       }
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        activeStates.size > 0
+      ) {
+        event.preventDefault();
+        const stateId = Array.from(activeStates);
+        handleNodesChange(stateId.map((id) => ({ id, type: 'remove' })));
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedTransitions, handleEdgesChange]);
+  }, [selectedTransitions, handleEdgesChange, activeStates, handleNodesChange]);
 
   // Cleanup timeout on unmount
   React.useEffect(() => {
@@ -1509,7 +1379,22 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
   // ==================== RENDER ====================
   return (
-    <div className='h-full w-full bg-gray-50 flex flex-col'>
+    <div className='h-full w-full bg-gray-50 flex flex-col relative'>
+      {/* Edge hover tooltip */}
+      {hoveredEdge && (
+        <div
+          className='fixed z-[10000] pointer-events-none'
+          style={{
+            left: hoveredEdge.x + 10,
+            top: hoveredEdge.y + 10,
+          }}
+        >
+          <div className='bg-gray-900 text-white text-xs px-3 py-2 rounded-md shadow-lg max-w-xs break-words'>
+            {hoveredEdge.fullLabel}
+          </div>
+        </div>
+      )}
+
       <SimulationControls
         scxmlContent={scxmlContent}
         onStateChange={setCurrentSimulationState}
@@ -1574,6 +1459,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           onConnect={onConnect}
           onNodeClick={(event, node) => handleStateClick(node.id)}
           onEdgeClick={handleEdgeClick}
+          onEdgeMouseEnter={handleEdgeMouseEnter}
+          onEdgeMouseLeave={handleEdgeMouseLeave}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={true}
@@ -1669,25 +1556,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           />
         </ReactFlow>
       </div>
-
-      {/* Global Confirmation Dialog */}
-      <ConfirmationDialog
-        isOpen={deleteConfirm.isOpen}
-        onClose={() =>
-          setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' })
-        }
-        onConfirm={() => {
-          if (deleteConfirm.nodeId && handleNodeDeleteRef.current) {
-            handleNodeDeleteRef.current(deleteConfirm.nodeId);
-          }
-          setDeleteConfirm({ isOpen: false, nodeId: '', nodeLabel: '' });
-        }}
-        title='Delete State'
-        message={`Are you sure you want to delete the state "${deleteConfirm.nodeLabel}"? This will also remove all transitions connected to this state.`}
-        confirmText='Delete'
-        cancelText='Cancel'
-        variant='danger'
-      />
     </div>
   );
 };

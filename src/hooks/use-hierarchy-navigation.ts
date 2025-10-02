@@ -23,29 +23,15 @@ export function useHierarchyNavigation({
   const filteredNodes = useMemo(() => {
     if (allNodes.length === 0) return [];
 
-    console.log('Hierarchy Navigation Debug:', {
-      currentParentId: hierarchyState.currentParentId,
-      allNodesCount: allNodes.length,
-      allNodes: allNodes.map((n) => ({ id: n.id, parentId: n.parentId })),
-    });
-
     let visibleNodesList: Node[] = [];
 
     if (!hierarchyState.currentParentId) {
       // At root level - show only nodes without parents
       visibleNodesList = allNodes.filter((node) => !node.parentId);
-      console.log(
-        'Root level nodes:',
-        visibleNodesList.map((n) => n.id)
-      );
     } else {
       // Inside a state - show only its direct children
       visibleNodesList = allNodes.filter(
         (node) => node.parentId === hierarchyState.currentParentId
-      );
-      console.log(
-        `Children of ${hierarchyState.currentParentId}:`,
-        visibleNodesList.map((n) => n.id)
       );
     }
 
@@ -53,13 +39,8 @@ export function useHierarchyNavigation({
     return visibleNodesList.map((node) => {
       const hasChildren = allNodes.some((n) => n.parentId === node.id);
 
-      // For hierarchy navigation, convert group nodes to regular scxmlState nodes
-      // This prevents ReactFlow from trying to render children inside the group
-      const nodeType = node.type === 'group' ? 'scxmlState' : node.type;
-
       return {
         ...node,
-        type: nodeType,
         // Remove parentId for hierarchy navigation since parent is not rendered
         parentId: undefined,
         data: {
