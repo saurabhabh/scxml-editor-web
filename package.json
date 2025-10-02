@@ -12,6 +12,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@tisoap/react-flow-smart-edge": "^3.0.0",
     "@types/d3": "^7.4.3",
+    "@types/uuid": "^10.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fast-xml-parser": "^5.2.5",
@@ -21,6 +22,7 @@
     "react-dom": "19.1.0",
     "react-resizable-panels": "^3.0.5",
     "reactflow": "^11.11.4",
+    "uuid": "^13.0.0",
     "xstate": "^5.21.0",
     "zustand": "^5.0.8"
   },

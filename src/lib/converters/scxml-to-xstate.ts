@@ -404,7 +404,6 @@ export class SCXMLToXStateConverter {
     return config;
   }
 
-
   /**
    * Convert SCXML document to React Flow nodes and edges with hierarchical layout
    */
@@ -510,11 +509,22 @@ export class SCXMLToXStateConverter {
       if (node.parentId) {
         const parent = allNodes.find((p) => p.id === node.parentId);
         if (parent) {
-          // Make position relative to parent (0,0 is parent's top-left corner)
-          node.position = {
-            x: node.position.x - parent.position.x,
-            y: node.position.y - parent.position.y,
-          };
+          const hasVizPosition = (node.data as any).hasVizPosition === true;
+
+          // For nodes with viz positions, convert from absolute to relative
+          // For auto-laid out nodes, they're already relative
+          if (hasVizPosition) {
+            const originalPos = { ...node.position };
+            // Make position relative to parent (0,0 is parent's top-left corner)
+            node.position = {
+              x: node.position.x - parent.position.x,
+              y: node.position.y - parent.position.y,
+            };
+
+            console.log(
+              `[CONVERT] ${node.id}: absolute(${originalPos.x}, ${originalPos.y}) -> relative(${node.position.x}, ${node.position.y}) [parent ${parent.id} at (${parent.position.x}, ${parent.position.y})]`
+            );
+          }
 
           // Add extent to constrain child within parent bounds
           (node as any).extent = 'parent';
@@ -600,7 +610,7 @@ export class SCXMLToXStateConverter {
     const state = stateInfo.state;
     const isContainer = stateInfo.isContainer;
 
-    // Extract visual metadata
+    // Extract visual metadata FIRST
     const visualMetadata = this.extractVisualMetadata(state);
 
     // Extract actions
@@ -629,8 +639,15 @@ export class SCXMLToXStateConverter {
     // Check if this is an initial state
     const isInitial = this.isInitialState(stateId, stateInfo.parentPath);
 
-    // Calculate initial position (will be refined later)
-    const position = this.calculateInitialPosition(stateId, stateInfo);
+    // Calculate initial position - defer to auto-layout if viz metadata is available
+    // The viz position will be applied later during layout processing
+    let position: { x: number; y: number };
+    if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
+      // Use a temporary position, actual viz position will be applied in layout
+      position = { x: 0, y: 0 };
+    } else {
+      position = this.calculateInitialPosition(stateId, stateInfo);
+    }
 
     // Create base node data
     const baseNodeData: SCXMLStateNodeData = {
@@ -668,19 +685,15 @@ export class SCXMLToXStateConverter {
       node.data = containerData;
     }
 
-    // Apply visual metadata if available
+    // Store viz metadata for position tracking in auto-layout
     if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
-      // Store original absolute position from viz:xywh
-      const absoluteX = visualMetadata.x;
-      const absoluteY = visualMetadata.y;
-
-      // For child nodes, ReactFlow expects relative positions
-      // We'll adjust this later in positionHierarchicalNodes if needed
-      node.position = { x: absoluteX, y: absoluteY };
-
       // Store absolute viz:xywh position for tracking
-      (node.data as any).vizX = absoluteX;
-      (node.data as any).vizY = absoluteY;
+      (node.data as any).vizX = visualMetadata.x;
+      (node.data as any).vizY = visualMetadata.y;
+      (node.data as any).hasVizPosition = true; // Flag to indicate viz position exists
+      console.log(
+        `[CREATE] ${node.id}: viz metadata stored - vizX=${visualMetadata.x}, vizY=${visualMetadata.y}, hasVizPosition=true`
+      );
     }
 
     // Don't apply viz:xywh width/height to avoid affecting node sizing
@@ -775,8 +788,7 @@ export class SCXMLToXStateConverter {
 
           // Only auto-position if no viz:xywh position exists
           const hasVizPosition =
-            (container.data as any).vizX !== undefined &&
-            (container.data as any).vizY !== undefined;
+            (container.data as any).hasVizPosition === true;
 
           if (!hasVizPosition) {
             // Position relative to parent
@@ -785,12 +797,14 @@ export class SCXMLToXStateConverter {
               y: currentY + 60, // Header offset
             };
           } else {
-            // For viz:xywh nodes, keep absolute positions for now
-            // Will be converted to relative later in the main processing loop
+            // Use viz position (will be converted to relative later)
             container.position = {
               x: (container.data as any).vizX,
               y: (container.data as any).vizY,
             };
+            console.log(
+              `[CONTAINER] ${container.id} using viz position: (${container.position.x}, ${container.position.y})`
+            );
           }
 
           const containerWidth = (container.data as any).width || 250;
@@ -830,9 +844,7 @@ export class SCXMLToXStateConverter {
           const actualHeight = (state.data as any).height || 80;
 
           // Only auto-position if no viz:xywh position exists
-          const hasVizPosition =
-            (state.data as any).vizX !== undefined &&
-            (state.data as any).vizY !== undefined;
+          const hasVizPosition = (state.data as any).hasVizPosition === true;
 
           if (!hasVizPosition) {
             // Position relative to parent
@@ -840,13 +852,16 @@ export class SCXMLToXStateConverter {
               x: currentX,
               y: currentY + 60, // Header offset
             };
+            console.log(`AUTO-POSITIONING ${state.id}:`, state.position);
           } else {
-            // For viz:xywh nodes, keep absolute positions for now
-            // Will be converted to relative later in the main processing loop
+            // Use viz position (will be converted to relative later)
             state.position = {
               x: (state.data as any).vizX,
               y: (state.data as any).vizY,
             };
+            console.log(
+              `[STATE] ${state.id} using viz position: (${state.position.x}, ${state.position.y})`
+            );
           }
 
           currentX += actualWidth + 50; // Increased horizontal spacing from 30 to 50
@@ -1336,6 +1351,7 @@ export class SCXMLToXStateConverter {
     if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
       node.data.vizX = visualMetadata.x;
       node.data.vizY = visualMetadata.y;
+      node.data.hasVizPosition = true; // Flag to indicate viz position exists
     }
 
     // Don't apply viz:xywh width/height to avoid affecting node sizing
@@ -1567,12 +1583,12 @@ export class SCXMLToXStateConverter {
       }
     }
 
-
     return context;
   }
 
   private extractVisualMetadata(element: any): VisualMetadata {
     const metadata: VisualMetadata = {};
+    const elementId = element['@_id'] || 'unknown';
 
     // Extract visual metadata from the viz namespace
     const vizXywh = this.getAttribute(element, 'viz:xywh');
@@ -1580,6 +1596,7 @@ export class SCXMLToXStateConverter {
 
     // Parse viz:xywh format: "x,y,width,height" (comma-separated)
     if (vizXywh && typeof vizXywh === 'string') {
+      console.log(`[EXTRACT] ${elementId}: found viz:xywh="${vizXywh}"`);
       const parts = vizXywh
         .trim()
         .split(',')
@@ -1589,7 +1606,12 @@ export class SCXMLToXStateConverter {
         metadata.y = parseFloat(parts[1]);
         metadata.width = parseFloat(parts[2]);
         metadata.height = parseFloat(parts[3]);
+        console.log(
+          `[EXTRACT] ${elementId}: parsed position (${metadata.x}, ${metadata.y}) size (${metadata.width}x${metadata.height})`
+        );
       }
+    } else {
+      console.log(`[EXTRACT] ${elementId}: no viz:xywh found`);
     }
 
     // Parse viz:rgb for fill color - store as style for now

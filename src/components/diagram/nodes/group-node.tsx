@@ -173,6 +173,7 @@ export const GroupNode = memo<NodeProps<GroupNodeData>>(
         // Check if a node has viz:xywh positioning
         // A node has viz:xywh if it has explicit position data from viz:xywh attribute
         const hasVizPosition = (node: any) => {
+          console.log('Checking viz position for node:', node.id, node.data);
           // Only check for position markers (vizX/vizY), not dimensions
           return node.data?.vizX !== undefined && node.data?.vizY !== undefined;
         };

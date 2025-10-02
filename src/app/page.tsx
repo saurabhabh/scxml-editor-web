@@ -10,10 +10,12 @@ import {
 import { TwoTabLayout } from '@/components/layout';
 import { VisualDiagram } from '@/components/diagram';
 import { Upload } from 'lucide-react';
-import { ErrorBoundary, ValidationPanel } from '@/components/ui';
+import { ErrorBoundary, ValidationPanel, UndoRedoControls } from '@/components/ui';
 import { SCXMLParser, SCXMLValidator } from '@/lib';
 import { hasVisualMetadata } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editor-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { HistoryManager } from '@/lib/history/history-manager';
 import type { FileInfo, ValidationError } from '@/types/common';
 import { DEFAULT_SCXML_TEMPLATE } from '@/lib/consts/default_scxml_template';
 
@@ -32,8 +34,10 @@ export default function Home() {
 
   const parser = useMemo(() => new SCXMLParser(), []);
   const validator = useMemo(() => new SCXMLValidator(), []);
+  const historyManager = useMemo(() => HistoryManager.getInstance(), []);
   const editorRef = useRef<XMLEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUpdatingFromHistory, setIsUpdatingFromHistory] = React.useState(false);
 
   const validateContent = useCallback(
     (xmlContent: string) => {
@@ -59,6 +63,13 @@ export default function Home() {
     [parser, validator, setErrors]
   );
 
+  // Initialize history on mount if there's existing content
+  useEffect(() => {
+    if (content && !historyManager.canUndo() && !historyManager.canRedo()) {
+      historyManager.initialize(content, 'Initial state');
+    }
+  }, []); // Run only once on mount
+
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
       validateContent(content);
@@ -70,8 +81,10 @@ export default function Home() {
   const handleFileLoad = useCallback(
     (loadedFileInfo: FileInfo) => {
       setFileInfo(loadedFileInfo);
+      // Initialize history with the loaded file
+      historyManager.initialize(loadedFileInfo.content, `Loaded ${loadedFileInfo.name}`);
     },
-    [setFileInfo]
+    [setFileInfo, historyManager]
   );
 
   const handleFileError = useCallback(
@@ -89,16 +102,26 @@ export default function Home() {
   const handleContentChange = useCallback(
     (newContent: string) => {
       setContent(newContent);
+
+      // Track history for text edits (with debouncing)
+      if (!isUpdatingFromHistory) {
+        historyManager.trackTextEdit(newContent);
+      }
     },
-    [setContent]
+    [setContent, historyManager, isUpdatingFromHistory]
   );
 
   const handleSCXMLChangeFromDiagram = useCallback(
-    (newContent: string) => {
+    (newContent: string, changeType?: 'position' | 'structure' | 'property') => {
       // Update content from visual diagram changes
       setContent(newContent);
+
+      // Track history for diagram changes with appropriate handling
+      if (!isUpdatingFromHistory) {
+        historyManager.trackDiagramChange(newContent, undefined, changeType);
+      }
     },
-    [setContent]
+    [setContent, historyManager, isUpdatingFromHistory]
   );
 
   const handleErrorClick = useCallback((error: ValidationError) => {
@@ -118,7 +141,32 @@ export default function Home() {
     setContent(DEFAULT_SCXML_TEMPLATE);
     setFileInfo(fileInfo);
     setErrors([]);
-  }, [setContent, setFileInfo, setErrors]);
+    // Initialize history with new document
+    historyManager.initialize(DEFAULT_SCXML_TEMPLATE, 'New document created');
+  }, [setContent, setFileInfo, setErrors, historyManager]);
+
+  // Undo/Redo handlers
+  const handleUndo = useCallback(
+    (restoredContent: string) => {
+      setIsUpdatingFromHistory(true);
+      setContent(restoredContent);
+      setTimeout(() => {
+        setIsUpdatingFromHistory(false);
+      }, 100);
+    },
+    [setContent]
+  );
+
+  const handleRedo = useCallback(
+    (restoredContent: string) => {
+      setIsUpdatingFromHistory(true);
+      setContent(restoredContent);
+      setTimeout(() => {
+        setIsUpdatingFromHistory(false);
+      }, 100);
+    },
+    [setContent]
+  );
 
   const handleNewFileUpload = useCallback(() => {
     fileInputRef.current?.click();
@@ -167,6 +215,8 @@ export default function Home() {
             setContent(content);
             setFileInfo(fileInfo);
             setErrors([]);
+            // Initialize history with the uploaded file
+            historyManager.initialize(content, `Uploaded ${file.name}`);
           }
         };
 
@@ -187,7 +237,7 @@ export default function Home() {
         event.target.value = '';
       }
     },
-    [setContent, setFileInfo, setErrors, setValidationPanelVisible]
+    [setContent, setFileInfo, setErrors, setValidationPanelVisible, historyManager]
   );
 
   const getDownloadFilename = () => {
@@ -234,6 +284,7 @@ export default function Home() {
           // console.log('Edges changed:', edges);
         }}
         onSCXMLChange={handleSCXMLChangeFromDiagram}
+        isUpdatingFromHistory={isUpdatingFromHistory}
       />
     </div>
   );
@@ -247,6 +298,14 @@ export default function Home() {
         onChange={handleFileInputChange}
         className='hidden'
       />
+
+      <UndoRedoControls
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        className='mr-2'
+      />
+
+      <div className='h-6 w-px bg-gray-300 mx-2' />
 
       <button
         onClick={handleNewFileUpload}
