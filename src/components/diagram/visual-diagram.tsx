@@ -171,6 +171,13 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     x: number;
     y: number;
   } | null>(null);
+  const [selectedEdgeForEdit, setSelectedEdgeForEdit] = React.useState<{
+    id: string;
+    event?: string;
+    cond?: string;
+    rawValue?: string;
+    editingField: 'event' | 'cond';
+  } | null>(null);
 
   // ==================== REFS ====================
   // Position update management
@@ -379,6 +386,76 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   handleNodePositionChangeRef.current = handleNodePositionChange;
 
   // ==================== EDGE HANDLERS ====================
+  const handleTransitionLabelChange = React.useCallback(
+    (edgeId: string, newLabel: string, editingField: 'event' | 'cond' = 'event') => {
+      if (!parserRef.current || !onSCXMLChange) return;
+      try {
+        const parseResult = parserRef.current.parse(scxmlContent);
+        if (parseResult.success && parseResult.data) {
+          const scxmlDoc = parseResult.data;
+
+          // Find the transition by edge ID
+          const edge = displayFilteredEdges.find((e) => e.id === edgeId);
+          if (!edge) return;
+
+          const sourceState = findStateById(scxmlDoc, edge.source);
+          if (!sourceState) return;
+
+          // Store the original event/cond to match the exact transition
+          const originalEvent = edge.data?.event;
+          const originalCond = edge.data?.condition;
+
+          // Find the transition in the source state
+          let transitionFound = false;
+          const updateTransition = (transition: any) => {
+            // Match transition by target AND original event/cond to identify the exact transition
+            const transitionTarget = transition['@_target'];
+            const transitionEvent = transition['@_event'];
+            const transitionCond = transition['@_cond'];
+
+            // Match by target and either event or condition
+            const isMatch =
+              transitionTarget === edge.target &&
+              ((originalEvent && transitionEvent === originalEvent) ||
+                (originalCond && transitionCond === originalCond) ||
+                (!originalEvent &&
+                  !originalCond &&
+                  !transitionEvent &&
+                  !transitionCond));
+
+            if (isMatch) {
+              // Update the appropriate field based on what's being edited
+              if (editingField === 'cond') {
+                transition['@_cond'] = newLabel;
+                delete transition['@_event']; // Remove event if setting condition
+              } else {
+                transition['@_event'] = newLabel;
+                delete transition['@_cond']; // Remove condition if setting event
+              }
+              transitionFound = true;
+            }
+          };
+
+          if (sourceState.transition) {
+            if (Array.isArray(sourceState.transition)) {
+              sourceState.transition.forEach(updateTransition);
+            } else {
+              updateTransition(sourceState.transition);
+            }
+          }
+
+          if (transitionFound) {
+            const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
+            onSCXMLChange(updatedSCXML, 'property');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to update transition label:', error);
+      }
+    },
+    [scxmlContent, onSCXMLChange, edges]
+  );
+
   const handleEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
     setActiveStates(new Set());
@@ -386,9 +463,21 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       const newTransitions = new Set(prev);
       if (newTransitions.has(edge.id)) {
         newTransitions.clear();
+        setSelectedEdgeForEdit(null);
       } else {
         newTransitions.clear();
         newTransitions.add(edge.id);
+        // Set the selected edge for editing
+        const hasEvent = !!edge.data?.event;
+        const hasCond = !!edge.data?.condition;
+        const initialValue = (hasEvent ? edge.data.event : hasCond ? edge.data.condition : '') || '';
+        setSelectedEdgeForEdit({
+          id: edge.id,
+          event: edge.data?.event,
+          cond: edge.data?.condition,
+          rawValue: initialValue,
+          editingField: hasEvent ? 'event' : 'cond',
+        });
       }
       return newTransitions;
     });
@@ -794,37 +883,41 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
           if (inSameContainer) {
             if (hasParallelEdges) {
-              if (edgeIndex === 0) {
-                edgeType = 'smoothstep';
-              } else if (edgeIndex === 1) {
-                edgeType = 'step';
-              } else {
-                edgeType = 'straight';
-              }
+              // Use custom edge type for parallel edges to support offset
+              edgeType = 'scxmlTransition';
             } else {
               edgeType = 'smoothstep';
             }
           } else {
             if (hasParallelEdges) {
-              if (edgeIndex === 0) {
-                edgeType = 'smart';
-              } else if (edgeIndex === 1) {
-                edgeType = 'smartStep';
-              } else {
-                edgeType = 'smartStraight';
-              }
+              // Use custom edge type for parallel edges to support offset
+              edgeType = 'scxmlTransition';
             } else {
               edgeType = 'smart';
             }
           }
 
           let pathOptions: any = {};
-          if (hasParallelEdges && inSameContainer) {
-            const offset = edgeIndex * 30 - (parallelEdges.length - 1) * 15;
+          if (hasParallelEdges) {
+            // Apply symmetrical offset for parallel edges
+            // For 2 edges: first curves down (-offset), second curves up (+offset)
+            // For 3+ edges: distribute symmetrically around center
+            let offset: number;
+
+            if (parallelEdges.length === 2) {
+              // Simple case: one up, one down with same magnitude
+              offset = edgeIndex === 0 ? -50 : 50;
+            } else {
+              // For 3+ edges: center the distribution
+              offset = (edgeIndex - (parallelEdges.length - 1) / 2) * 60;
+            }
+
+            const labelOffsetY = (edgeIndex - (parallelEdges.length - 1) / 2) * 25;
             pathOptions = {
               offset,
               borderRadius: 20 + edgeIndex * 10,
               curvature: 0.25 + edgeIndex * 0.1,
+              labelOffsetY,
             };
           }
 
@@ -832,9 +925,13 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           const getLabelContent = () => {
             const parts: string[] = [];
             if (edge.data?.event) parts.push(`${edge.data.event}`);
-            if (edge.data?.condition) parts.push(`[${edge.data.condition}]`);
+            if (edge.data?.condition) parts.push(`${edge.data.condition}`);
             if (edge.data?.actions?.length > 0)
-              parts.push(`/ ${edge.data.actions.length} action${edge.data.actions.length > 1 ? 's' : ''}`);
+              parts.push(
+                `/ ${edge.data.actions.length} action${
+                  edge.data.actions.length > 1 ? 's' : ''
+                }`
+              );
             return parts.join(' ');
           };
 
@@ -851,6 +948,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             data: {
               ...edge.data,
               fullLabel,
+              offset: pathOptions.offset,
+              labelOffsetY: pathOptions.labelOffsetY,
             },
             pathOptions,
             markerEnd: {
@@ -1346,18 +1445,12 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   // Handle keyboard events for edge deletion
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        selectedTransitions.size > 0
-      ) {
+      if (event.key === 'Delete' && selectedTransitions.size > 0) {
         event.preventDefault();
         const edgeId = Array.from(selectedTransitions)[0];
         handleEdgesChange([{ id: edgeId, type: 'remove' }]);
       }
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        activeStates.size > 0
-      ) {
+      if (event.key === 'Delete' && activeStates.size > 0) {
         event.preventDefault();
         const stateId = Array.from(activeStates);
         handleNodesChange(stateId.map((id) => ({ id, type: 'remove' })));
@@ -1450,6 +1543,57 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         )}
       </div>
 
+      {/* Transition Label Editor */}
+      {selectedEdgeForEdit && (
+        <div className='flex items-center gap-3 px-4 py-2 bg-blue-50 border-b'>
+          <span className='text-sm font-medium text-gray-700'>
+            Edit Transition:
+          </span>
+          <input
+            type='text'
+            value={selectedEdgeForEdit.rawValue || ''}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setSelectedEdgeForEdit({
+                ...selectedEdgeForEdit,
+                rawValue: newValue,
+              });
+            }}
+            onBlur={() => {
+              const newLabel = selectedEdgeForEdit.rawValue || '';
+              if (newLabel) {
+                handleTransitionLabelChange(selectedEdgeForEdit.id, newLabel, selectedEdgeForEdit.editingField);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const newLabel = selectedEdgeForEdit.rawValue || '';
+                if (newLabel) {
+                  handleTransitionLabelChange(selectedEdgeForEdit.id, newLabel, selectedEdgeForEdit.editingField);
+                }
+                setSelectedEdgeForEdit(null);
+                setSelectedTransitions(new Set());
+              } else if (e.key === 'Escape') {
+                setSelectedEdgeForEdit(null);
+                setSelectedTransitions(new Set());
+              }
+            }}
+            className='flex-1 px-3 py-1.5 text-sm text-gray-800 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+            placeholder={selectedEdgeForEdit.editingField === 'cond' ? 'Enter condition' : 'Enter event'}
+            autoFocus
+          />
+          <button
+            onClick={() => {
+              setSelectedEdgeForEdit(null);
+              setSelectedTransitions(new Set());
+            }}
+            className='text-sm text-gray-600 hover:text-gray-900 px-2'
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       <div className='flex-1'>
         <ReactFlow
           nodes={nodes}
@@ -1461,6 +1605,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           onEdgeClick={handleEdgeClick}
           onEdgeMouseEnter={handleEdgeMouseEnter}
           onEdgeMouseLeave={handleEdgeMouseLeave}
+          onPaneClick={() => {
+            setSelectedEdgeForEdit(null);
+            setSelectedTransitions(new Set());
+          }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={true}
@@ -1478,7 +1626,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           nodesDraggable={true}
           nodesConnectable={true}
           elementsSelectable={true}
-          deleteKeyCode={['Backspace', 'Delete']}
+          deleteKeyCode={['Delete']}
           connectionLineType={ConnectionLineType.SmoothStep}
           connectionMode={ConnectionMode.Loose}
           connectionRadius={2}
@@ -1539,9 +1687,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               S
             </ControlButton>
             <ControlButton
+              onClick={navigateUp}
               title='One Level Up'
               aria-label='One Level Up'
               className='text-gray-600 hover:text-gray-900'
+              disabled={!canNavigateUp}
             >
               <ArrowUp />
             </ControlButton>

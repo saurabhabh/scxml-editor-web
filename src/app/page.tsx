@@ -30,6 +30,7 @@ export default function Home() {
     setErrors,
     setFileInfo,
     setValidationPanelVisible,
+    navigateToRoot,
   } = useEditorStore();
 
   const parser = useMemo(() => new SCXMLParser(), []);
@@ -83,8 +84,10 @@ export default function Home() {
       setFileInfo(loadedFileInfo);
       // Initialize history with the loaded file
       historyManager.initialize(loadedFileInfo.content, `Loaded ${loadedFileInfo.name}`);
+      // Reset breadcrumb navigation to root
+      navigateToRoot();
     },
-    [setFileInfo, historyManager]
+    [setFileInfo, historyManager, navigateToRoot]
   );
 
   const handleFileError = useCallback(
@@ -143,7 +146,9 @@ export default function Home() {
     setErrors([]);
     // Initialize history with new document
     historyManager.initialize(DEFAULT_SCXML_TEMPLATE, 'New document created');
-  }, [setContent, setFileInfo, setErrors, historyManager]);
+    // Reset breadcrumb navigation to root
+    navigateToRoot();
+  }, [setContent, setFileInfo, setErrors, historyManager, navigateToRoot]);
 
   // Undo/Redo handlers
   const handleUndo = useCallback(

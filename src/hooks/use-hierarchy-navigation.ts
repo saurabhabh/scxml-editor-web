@@ -19,6 +19,26 @@ export function useHierarchyNavigation({
     setVisibleNodes,
   } = useEditorStore();
 
+  // Track root node IDs to detect when a new file is loaded
+  const rootNodeIds = useMemo(() => {
+    return allNodes
+      .filter((node) => !node.parentId)
+      .map((n) => n.id)
+      .sort()
+      .join(',');
+  }, [allNodes]);
+
+  // Reset navigation when root nodes change (indicates new file loaded)
+  useEffect(() => {
+    // When root nodes change and we're not at root, navigate to root
+    if (rootNodeIds && hierarchyState.currentPath.length > 0) {
+      const currentParentExists = allNodes.some(n => n.id === hierarchyState.currentParentId);
+      if (!currentParentExists) {
+        navigateToRoot();
+      }
+    }
+  }, [rootNodeIds, hierarchyState.currentPath.length, hierarchyState.currentParentId, allNodes, navigateToRoot]);
+
   // Filter nodes to only show current hierarchy level
   const filteredNodes = useMemo(() => {
     if (allNodes.length === 0) return [];
