@@ -65,5 +65,4 @@ export interface HierarchicalLayout {
   edges: Edge[];
   hierarchy: Map<string, string[]>; // parent -> children mapping
   parentMap: Map<string, string>; // child -> parent mapping
-  datamodelContext?: Record<string, any>; // SCXML datamodel context
 }

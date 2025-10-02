@@ -53,10 +53,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       }
     } catch (err) {
       console.error('Error creating machine:', err);
-      setError(
-        'Error creating machine: ' +
-          (err instanceof Error ? err.message : String(err))
-      );
+      // setError(
+      //   'Error creating machine: ' +
+      //     (err instanceof Error ? err.message : String(err))
+      // );
       return null;
     }
   }, [scxmlContent]);

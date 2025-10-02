@@ -3,7 +3,7 @@
 
 import React, { memo, useMemo } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
-import { Circle, Square, Target, Trash2 } from 'lucide-react';
+import { Circle, Square, Target, Trash2, ArrowDownCircle } from 'lucide-react';
 import {
   visualStylesToCSS,
   getAdditionalClasses,
@@ -39,6 +39,10 @@ export interface SCXMLStateNodeData {
   onActionsChange?: (entryActions: string[], exitActions: string[]) => void;
   onDelete?: () => void;
   isEditing?: boolean;
+  // Hierarchy navigation
+  hasChildren?: boolean;
+  isCompound?: boolean;
+  onNavigateInto?: () => void;
 }
 
 export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
@@ -62,6 +66,9 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       onActionsChange,
       onDelete,
       isEditing = false,
+      hasChildren = false,
+      isCompound = false,
+      onNavigateInto,
     } = data;
 
     const [editingLabel, setEditingLabel] = React.useState(false);
@@ -234,9 +241,14 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
 
     const nodeClasses = `${getBaseClasses()} ${additionalClasses} backdrop-blur-sm border-2`;
 
-    // Apply border style
+    // Apply border style - dashed for compound states
     if (visualStyles?.borderStyle) {
       inlineStyles.borderStyle = visualStyles.borderStyle;
+    } else if (hasChildren || isCompound || stateType === 'compound') {
+      // Compound states get dashed borders
+      inlineStyles.borderStyle = 'dashed';
+    } else {
+      inlineStyles.borderStyle = 'solid';
     }
 
     // Get icon for state type with matching colors
@@ -360,6 +372,20 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
             title='Delete state'
           >
             <Trash2 className='h-4 w-4 text-gray-600 hover:text-red-600 transition-colors' />
+          </button>
+        )}
+
+        {/* Navigate into button - only show for compound states */}
+        {(hasChildren || isCompound) && onNavigateInto && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateInto();
+            }}
+            className='absolute bottom-2 right-2 p-2 bg-blue-500/90 hover:bg-blue-600 border border-blue-600 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
+            title='Navigate into this state'
+          >
+            <ArrowDownCircle className='h-5 w-5 text-white' />
           </button>
         )}
 

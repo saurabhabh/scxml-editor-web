@@ -1,61 +1,57 @@
 //visual-diagram.tsx
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { useHierarchyNavigation } from '@/hooks/use-hierarchy-navigation';
+import { SCXMLToXStateConverter } from '@/lib/converters/scxml-to-xstate';
+import { VisualMetadataManager } from '@/lib/metadata';
+import { SCXMLParser } from '@/lib/parsers/scxml-parser';
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  ControlButton,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  applyNodeChanges,
-  type Connection,
-  type Edge,
-  type Node,
-  type NodeTypes,
-  BackgroundVariant,
-  MarkerType,
-  ConnectionLineType,
-  ConnectionMode,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  addStateToDocument,
+  createStateElement,
+  findStateById,
+  removeStateFromDocument,
+  removeTransitionByEdgeId,
+  updateStateActions,
+  updateStateType,
+  updateTransitionTargets,
+} from '@/lib/utils/scxml-manipulation-utils';
+import { computeVisualStyles } from '@/lib/utils/visual-style-utils';
+import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
+import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
 import {
   SmartBezierEdge,
   SmartStepEdge,
   SmartStraightEdge,
-  getSmartEdge,
 } from '@tisoap/react-flow-smart-edge';
-import { SCXMLStateNode } from './nodes/scxml-state-node';
+import { ArrowUp, ChevronRight, Home } from 'lucide-react';
+import React, { useCallback, useMemo } from 'react';
+import {
+  Background,
+  BackgroundVariant,
+  ConnectionLineType,
+  ConnectionMode,
+  ControlButton,
+  Controls,
+  MarkerType,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+  type Connection,
+  type Edge,
+  type Node,
+  type NodeTypes,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { SimulationControls } from '../simulation';
+import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { GroupNode } from './nodes/group-node';
 import { HistoryWrapperNode } from './nodes/history-wrapper-node';
-import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
-import { SimulationControls } from '../simulation';
-import { SCXMLParser } from '@/lib/parsers/scxml-parser';
-import { SCXMLToXStateConverter } from '@/lib/converters/scxml-to-xstate';
-import { VisualMetadataManager } from '@/lib/metadata';
-import { computeVisualStyles } from '@/lib/utils/visual-style-utils';
-import { ConditionEvaluator } from '@/lib/scxml/condition-evaluator';
-import {
-  findStateById,
-  updateTransitionTargets,
-  updateStateActions,
-  updateStateType,
-  createStateElement,
-  createTransitionElement,
-  addStateToDocument,
-  removeStateFromDocument,
-  addTransitionToState,
-  updateStatePosition,
-  removeTransitionByEdgeId,
-} from '@/lib/utils/scxml-manipulation-utils';
-import type { ElementVisualMetadata } from '@/types/visual-metadata';
-import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
-import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
-import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
-import { ArrowUp, ArrowUp10, ArrowUpIcon } from 'lucide-react';
+import { SCXMLStateNode } from './nodes/scxml-state-node';
 
 interface VisualDiagramProps {
   scxmlContent: string;
@@ -143,7 +139,7 @@ const initialEdges: Edge[] = [
   },
 ];
 
-export const VisualDiagram: React.FC<VisualDiagramProps> = ({
+const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   scxmlContent,
   onNodeChange,
   onEdgeChange,
@@ -154,15 +150,13 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
   const [transitionDisplayMode, setTransitionDisplayMode] = React.useState<
     'all' | 'active' | 'available'
   >('all');
+  const { fitView } = useReactFlow();
   const [activeStates, setActiveStates] = React.useState<Set<string>>(
     new Set()
   );
   const [selectedTransitions, setSelectedTransitions] = React.useState<
     Set<string>
   >(new Set());
-  const [datamodelContext, setDatamodelContext] = React.useState<
-    Record<string, any>
-  >({});
   const [deleteConfirm, setDeleteConfirm] = React.useState<{
     isOpen: boolean;
     nodeId: string;
@@ -330,9 +324,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         // Store the parsed SCXML document for later use
         scxmlDocRef.current = parseResult.data;
         // Convert to React Flow nodes and edges
-        const { nodes, edges, datamodelContext } = converter.convertToReactFlow(
-          parseResult.data
-        );
+        const { nodes, edges } = converter.convertToReactFlow(parseResult.data);
 
         // Enhance nodes with visual metadata if available
         const enhancedNodes = nodes.map((node) => {
@@ -598,7 +590,6 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           edges: edgesWithMarkers,
           parser,
           metadataManager,
-          datamodelContext,
         };
       } else {
         console.warn('SCXML parsing failed:', parseResult.errors);
@@ -613,12 +604,99 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       edges: initialEdges,
       parser: null,
       metadataManager: null,
-      datamodelContext: {},
     };
   }, [scxmlContent]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Use hierarchy navigation to filter nodes
+  const {
+    filteredNodes,
+    filteredEdges: hierarchyFilteredEdges,
+    breadcrumbPath,
+    canNavigateUp,
+    navigateUp: originalNavigateUp,
+    navigateToRoot: originalNavigateToRoot,
+    navigateIntoState: originalNavigateIntoState,
+    navigateToBreadcrumb: originalNavigateToBreadcrumb,
+    currentParentNode,
+    currentParentId,
+  } = useHierarchyNavigation({
+    allNodes: parsedData.nodes,
+    allEdges: parsedData.edges,
+  });
+
+  // Wrap navigation functions to trigger fitView after navigation
+  const navigateWithFitView = useCallback(
+    (navigationFn: () => void) => {
+      navigationFn();
+      // Use setTimeout to ensure nodes are updated before fitting view
+      setTimeout(() => {
+        fitView({
+          padding: 0.3,
+          includeHiddenNodes: false,
+          minZoom: 0.5,
+          maxZoom: 2,
+          duration: 800,
+        });
+      }, 50);
+    },
+    [fitView]
+  );
+
+  // Auto-fit view when hierarchy level changes
+  React.useEffect(() => {
+    // Skip initial render
+    if (filteredNodes.length > 0) {
+      // Use a longer delay to ensure ReactFlow has updated the nodes and all state updates are complete
+      const timeoutId = setTimeout(() => {
+        // Only trigger fitView if we're not in the middle of updating positions
+        if (!isUpdatingPositionRef.current) {
+          fitView({
+            padding: 0.3,
+            includeHiddenNodes: false,
+            minZoom: 0.5,
+            maxZoom: 2,
+            duration: 800,
+          });
+        } else {
+          // If we're updating, retry after the update is complete
+          const retryTimeoutId = setTimeout(() => {
+            fitView({
+              padding: 0.3,
+              includeHiddenNodes: false,
+              minZoom: 0.5,
+              maxZoom: 2,
+              duration: 800,
+            });
+          }, 300);
+          return () => clearTimeout(retryTimeoutId);
+        }
+      }, 150);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentParentId, fitView, filteredNodes.length]);
+
+  const navigateUp = useCallback(
+    () => navigateWithFitView(originalNavigateUp),
+    [navigateWithFitView, originalNavigateUp]
+  );
+
+  const navigateToRoot = useCallback(
+    () => navigateWithFitView(originalNavigateToRoot),
+    [navigateWithFitView, originalNavigateToRoot]
+  );
+
+  const navigateIntoState = useCallback(
+    (stateId: string) => navigateWithFitView(() => originalNavigateIntoState(stateId)),
+    [navigateWithFitView, originalNavigateIntoState]
+  );
+
+  const navigateToBreadcrumb = useCallback(
+    (index: number) => navigateWithFitView(() => originalNavigateToBreadcrumb(index)),
+    [navigateWithFitView, originalNavigateToBreadcrumb]
+  );
 
   // Handle node deletion - moved here after state hooks are defined
   const handleNodeDelete = React.useCallback(
@@ -701,14 +779,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         // Generate a unique ID for the new state
         let newStateId = 'state_1';
         let counter = 1;
-        const existingIds = new Set(nodes.map((n) => n.id));
+        const existingIds = new Set(parsedData.nodes.map((n) => n.id));
         while (existingIds.has(newStateId)) {
           counter++;
           newStateId = `state_${counter}`;
         }
 
-        // Get child nodes for positioning
-        const childNodes = nodes.filter((node) => node.parentId === parentId);
+        // Get child nodes for positioning from parsedData (all nodes)
+        const childNodes = parsedData.nodes.filter(
+          (node) => node.parentId === parentId
+        );
 
         // Calculate position using grid layout
         let x = 50;
@@ -818,6 +898,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
               // Reset flag after a short delay
               setTimeout(() => {
                 isUpdatingPositionRef.current = false;
+                // Trigger a fit view after state addition to ensure proper positioning
+                setTimeout(() => {
+                  fitView({
+                    padding: 0.3,
+                    includeHiddenNodes: false,
+                    minZoom: 0.5,
+                    maxZoom: 2,
+                    duration: 600,
+                  });
+                }, 100);
               }, 100);
 
               console.log('Successfully added new child state:', newStateId);
@@ -833,7 +923,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       }
     };
   }, [
-    nodes,
+    parsedData.nodes,
     onSCXMLChange,
     handleNodeLabelChange,
     handleNodeDeleteWrapper,
@@ -852,7 +942,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       // Generate a unique ID for the new state
       let newStateId = 'state_1';
       let counter = 1;
-      const existingIds = new Set(nodes.map((n) => n.id));
+      const existingIds = new Set(parsedData.nodes.map((n) => n.id));
       while (existingIds.has(newStateId)) {
         counter++;
         newStateId = `state_${counter}`;
@@ -954,21 +1044,25 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
         // Update SCXML content - this will trigger re-parse and UI update
         onSCXMLChange(updatedSCXML);
+
+        // Trigger a fit view after root state addition to ensure proper positioning
+        setTimeout(() => {
+          fitView({
+            padding: 0.3,
+            includeHiddenNodes: false,
+            minZoom: 0.5,
+            maxZoom: 2,
+            duration: 600,
+          });
+        }, 200);
       }
     } catch (error) {
       console.error('Failed to add new state:', error);
     }
-  }, [scxmlContent, onSCXMLChange, nodes]);
-
-  // Update datamodel context when parsed data changes
-  React.useEffect(() => {
-    if (parsedData.datamodelContext) {
-      setDatamodelContext(parsedData.datamodelContext);
-    }
-  }, [parsedData.datamodelContext]);
+  }, [scxmlContent, onSCXMLChange, parsedData.nodes]);
 
   // Filter and evaluate edges based on display mode
-  const filteredEdges = React.useMemo(() => {
+  const displayFilteredEdges = React.useMemo(() => {
     // Apply selection highlighting to edges
     const applySelectionStyles = (edge: Edge) => {
       const isSelected = selectedTransitions.has(edge.id);
@@ -1005,97 +1099,46 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
     if (transitionDisplayMode === 'all') {
       // Show all transitions with evaluation status
-      return edges.map((edge) => {
-        let enhancedEdge = edge;
-        if (edge.data?.condition && datamodelContext) {
-          const evaluationResult = ConditionEvaluator.evaluateCondition(
-            edge.data.condition,
-            datamodelContext
-          );
-          enhancedEdge = {
-            ...edge,
-            data: {
-              ...edge.data,
-              conditionEvaluated: evaluationResult,
-            },
-          };
-        }
-        return applySelectionStyles(enhancedEdge);
+      return hierarchyFilteredEdges.map((edge) => {
+        return applySelectionStyles(edge);
       });
     }
 
     if (activeStates.size === 0) {
-      return [];
+      return hierarchyFilteredEdges.map((edge) => applySelectionStyles(edge));
     }
 
     // Filter by active states
-    const fromActiveStates = edges.filter((edge) =>
+    const fromActiveStates = hierarchyFilteredEdges.filter((edge) =>
       activeStates.has(edge.source)
     );
 
     if (transitionDisplayMode === 'active') {
       // Show all transitions from active states
       return fromActiveStates.map((edge) => {
-        let enhancedEdge = edge;
-        if (edge.data?.condition && datamodelContext) {
-          const evaluationResult = ConditionEvaluator.evaluateCondition(
-            edge.data.condition,
-            datamodelContext
-          );
-          enhancedEdge = {
-            ...edge,
-            data: {
-              ...edge.data,
-              conditionEvaluated: evaluationResult,
-            },
-          };
-        }
-        return applySelectionStyles(enhancedEdge);
+        return applySelectionStyles(edge);
       });
     }
 
     // 'available' mode - only show transitions with true or no conditions
     return fromActiveStates
       .filter((edge) => {
-        if (!edge.data?.condition) {
-          return true; // No condition means always available
-        }
-
-        const evaluationResult = ConditionEvaluator.evaluateCondition(
-          edge.data.condition,
-          datamodelContext
-        );
-
-        return evaluationResult !== false;
+        return true; // Show all transitions in available mode
       })
       .map((edge) => {
-        let enhancedEdge = edge;
-        if (edge.data?.condition) {
-          const evaluationResult = ConditionEvaluator.evaluateCondition(
-            edge.data.condition,
-            datamodelContext
-          );
-          enhancedEdge = {
-            ...edge,
-            data: {
-              ...edge.data,
-              conditionEvaluated: evaluationResult,
-            },
-          };
-        }
-        return applySelectionStyles(enhancedEdge);
+        return applySelectionStyles(edge);
       });
   }, [
-    edges,
+    hierarchyFilteredEdges,
     activeStates,
     transitionDisplayMode,
-    datamodelContext,
     selectedTransitions,
   ]);
 
   // Enhance nodes to highlight active states
   const enhancedNodes = React.useMemo(() => {
-    return nodes.map((node) => {
+    // Use filteredNodes from hierarchy navigation instead of raw nodes
+    return filteredNodes.map((node) => {
       const isActive =
         activeStates.has(node.id) || node.id === currentSimulationState;
 
@@ -1121,14 +1164,16 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           ...node.style,
           ...(isActive
             ? {
-                border: '3px solid #3b82f6',
+                borderWidth: 3,
+                borderStyle: 'solid',
+                borderColor: '#3b82f6',
                 boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.3)',
               }
             : {}),
         },
       };
     });
-  }, [nodes, activeStates, currentSimulationState]);
+  }, [filteredNodes, activeStates, currentSimulationState]);
   console.log('Enhanced Nodes:', enhancedNodes);
   // Initialize nodes and edges when SCXML content actually changes
   React.useEffect(() => {
@@ -1150,7 +1195,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
       previousScxmlRef.current = scxmlContent;
 
-      // When content changes, use the new positions from parsedData
+      // When content changes, use the new positions from filteredNodes (hierarchy-aware)
       // But only if we're not in the middle of a position/structure update
       if (!isUpdatingPositionRef.current) {
         // Preserve current node positions when updating
@@ -1159,7 +1204,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
             currentNodes.map((node) => [node.id, node.position])
           );
 
-          return parsedData.nodes.map((node) => {
+          return filteredNodes.map((node) => {
             const currentPosition = currentPositions.get(node.id);
             if (currentPosition) {
               // Use existing position if node already exists
@@ -1170,8 +1215,8 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
           });
         });
 
-        // Ensure all edges are selectable and focusable
-        const selectableEdges = parsedData.edges.map((edge) => ({
+        // Ensure all filtered edges are selectable and focusable
+        const selectableEdges = hierarchyFilteredEdges.map((edge) => ({
           ...edge,
           selectable: true,
           focusable: true,
@@ -1179,18 +1224,18 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         setEdges(selectableEdges);
       }
       // If we're updating (like during delete), we handle nodes directly in the operation
-    } else if (nodes.length === 0 && parsedData.nodes.length > 0) {
-      // Initial load case - just set the nodes
-      setNodes(parsedData.nodes);
-      // Ensure all edges are selectable and focusable
-      const selectableEdges = parsedData.edges.map((edge) => ({
+    } else if (nodes.length === 0 && filteredNodes.length > 0) {
+      // Initial load case - just set the filtered nodes
+      setNodes(filteredNodes);
+      // Ensure all filtered edges are selectable and focusable
+      const selectableEdges = hierarchyFilteredEdges.map((edge) => ({
         ...edge,
         selectable: true,
         focusable: true,
       }));
       setEdges(selectableEdges);
     }
-  }, [scxmlContent, parsedData]);
+  }, [scxmlContent, parsedData, filteredNodes, hierarchyFilteredEdges]);
 
   const handleNodePositionChange = React.useCallback(
     (nodeId: string, x: number, y: number) => {
@@ -1624,14 +1669,14 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
 
   // Handle initial state setting
   React.useEffect(() => {
-    // Find initial state from nodes
-    const initialState = nodes.find((node) => node.data?.isInitial);
+    // Find initial state from filtered nodes
+    const initialState = filteredNodes.find((node) => node.data?.isInitial);
     if (initialState && activeStates.size === 0) {
       setActiveStates(new Set([initialState.id]));
     }
-  }, [nodes]);
+  }, [filteredNodes]);
 
-  console.log('filteredEdges', filteredEdges);
+  console.log('displayFilteredEdges', displayFilteredEdges);
 
   return (
     <div className='h-full w-full bg-gray-50 flex flex-col'>
@@ -1639,6 +1684,61 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         scxmlContent={scxmlContent}
         onStateChange={setCurrentSimulationState}
       />
+
+      {/* Hierarchy Navigation Controls */}
+      <div className='flex items-center gap-2 px-4 py-2 bg-white border-b shadow-sm'>
+        {/* Up Navigation Button */}
+        {canNavigateUp && (
+          <button
+            onClick={navigateUp}
+            className='p-2 hover:bg-gray-100 rounded-lg transition-colors'
+            title='Navigate up one level'
+          >
+            <ArrowUp className='h-4 w-4 text-gray-700' />
+          </button>
+        )}
+
+        {/* Home Button */}
+        <button
+          onClick={navigateToRoot}
+          className='p-2 hover:bg-gray-100 rounded-lg transition-colors'
+          title='Navigate to root'
+          disabled={!canNavigateUp}
+        >
+          <Home className='h-4 w-4 text-gray-700' />
+        </button>
+
+        <div className='h-6 w-px bg-gray-300 mx-1' />
+
+        {/* Breadcrumb Navigation */}
+        <div className='flex items-center gap-1 flex-1'>
+          {breadcrumbPath.map((path, index) => (
+            <React.Fragment key={index}>
+              <button
+                onClick={() => navigateToBreadcrumb(index)}
+                className={`px-2 py-1 text-sm hover:bg-gray-100 rounded transition-colors ${
+                  index === breadcrumbPath.length - 1
+                    ? 'font-semibold text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {path}
+              </button>
+              {index < breadcrumbPath.length - 1 && (
+                <ChevronRight className='h-3 w-3 text-gray-400' />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Current Level Info */}
+        {currentParentNode && (
+          <div className='text-sm text-gray-600 ml-auto'>
+            Level: {breadcrumbPath.length - 1}
+          </div>
+        )}
+      </div>
+
       {/* <div className='flex items-center gap-4 px-4 py-2 bg-white border-b'>
         <div className='flex items-center gap-2'>
           <label className='text-sm font-medium text-gray-700'>
@@ -1705,7 +1805,7 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
       <div className='flex-1'>
         <ReactFlow
           nodes={enhancedNodes}
-          edges={filteredEdges}
+          edges={displayFilteredEdges}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
@@ -1826,5 +1926,14 @@ export const VisualDiagram: React.FC<VisualDiagramProps> = ({
         variant='danger'
       />
     </div>
+  );
+};
+
+// Export wrapper component with ReactFlowProvider
+export const VisualDiagram: React.FC<VisualDiagramProps> = (props) => {
+  return (
+    <ReactFlowProvider>
+      <VisualDiagramInner {...props} />
+    </ReactFlowProvider>
   );
 };

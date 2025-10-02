@@ -52,7 +52,6 @@ export class SCXMLToXStateConverter {
   private hierarchyMap: Map<string, string[]> = new Map(); // parent -> children mapping
   private parentMap: Map<string, string> = new Map(); // child -> parent mapping
   private rootScxml: any = null;
-  private datamodelContext: ConditionContext = {};
   private claimedStates: Set<string> = new Set(); // Track states already claimed by their parent
   private edgePairCounts: Map<string, number> = new Map(); // Track edge pairs for handle assignment
 
@@ -405,12 +404,6 @@ export class SCXMLToXStateConverter {
     return config;
   }
 
-  /**
-   * Get the datamodel context
-   */
-  getDatamodelContext(): ConditionContext {
-    return { ...this.datamodelContext };
-  }
 
   /**
    * Convert SCXML document to React Flow nodes and edges with hierarchical layout
@@ -418,7 +411,6 @@ export class SCXMLToXStateConverter {
   convertToReactFlow(scxmlDoc: SCXMLDocument): {
     nodes: Node[];
     edges: Edge[];
-    datamodelContext: ConditionContext;
   } {
     const scxml = scxmlDoc.scxml;
     this.rootScxml = scxml;
@@ -446,7 +438,6 @@ export class SCXMLToXStateConverter {
     return {
       nodes: hierarchicalLayout.nodes,
       edges: hierarchicalLayout.edges,
-      datamodelContext: this.getDatamodelContext(),
     };
   }
 
@@ -586,7 +577,6 @@ export class SCXMLToXStateConverter {
       edges: edges, // Direct edges without proxy mapping
       hierarchy: this.hierarchyMap,
       parentMap: this.parentMap,
-      datamodelContext: this.getDatamodelContext(),
     };
   }
 
@@ -1577,8 +1567,6 @@ export class SCXMLToXStateConverter {
       }
     }
 
-    // Store the context for later use
-    this.datamodelContext = context;
 
     return context;
   }

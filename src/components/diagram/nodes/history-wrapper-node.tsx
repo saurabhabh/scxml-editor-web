@@ -27,7 +27,9 @@ export const HistoryWrapperNode = memo<HistoryWrapperNodeProps>(
     const height = (data as any).height || 150;
 
     const borderStyle = {
-      border: '3px dashed #8b5cf6',
+      borderWidth: 3,
+      borderStyle: 'dashed',
+      borderColor: '#8b5cf6',
       borderRadius: '12px',
       backgroundColor: 'rgba(139, 92, 246, 0.05)',
       position: 'relative' as const,
@@ -39,7 +41,9 @@ export const HistoryWrapperNode = memo<HistoryWrapperNodeProps>(
 
     const selectedStyle = selected
       ? {
-          border: '3px dashed #6366f1',
+          borderWidth: 3,
+          borderStyle: 'dashed',
+          borderColor: '#6366f1',
           backgroundColor: 'rgba(99, 102, 241, 0.1)',
           boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.3)',
         }

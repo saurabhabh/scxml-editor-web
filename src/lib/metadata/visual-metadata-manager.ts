@@ -242,6 +242,9 @@ export class VisualMetadataManager {
     (enrichedDoc.scxml as any)[`@_xmlns:${fullConfig.namespacePrefix}`] =
       fullConfig.namespaceURI;
 
+    // Preserve boolean-like attribute values before serialization
+    const preservedDoc = this.preserveBooleanAttributes(enrichedDoc);
+
     // Serialize with XML builder
     const builder = new XMLBuilder({
       ignoreAttributes: false,
@@ -251,7 +254,12 @@ export class VisualMetadataManager {
       suppressEmptyNode: false,
     });
 
-    return builder.build(enrichedDoc);
+    let result = builder.build(preservedDoc);
+
+    // Clean up preservation markers
+    result = this.cleanupPreservationMarkers(result);
+
+    return result;
   }
 
   /**
@@ -701,6 +709,9 @@ export class VisualMetadataManager {
     // Remove all visual metadata attributes and namespace declarations
     const cleanDoc = this.removeVisualMetadataRecursively(scxmlDoc);
 
+    // Preserve boolean-like attribute values before serialization
+    const preservedDoc = this.preserveBooleanAttributes(cleanDoc);
+
     const builder = new XMLBuilder({
       ignoreAttributes: false,
       attributeNamePrefix: '@_',
@@ -709,7 +720,12 @@ export class VisualMetadataManager {
       suppressEmptyNode: false,
     });
 
-    return builder.build(cleanDoc);
+    let result = builder.build(preservedDoc);
+
+    // Clean up preservation markers
+    result = this.cleanupPreservationMarkers(result);
+
+    return result;
   }
 
   private removeVisualMetadataRecursively(obj: any): any {
@@ -736,6 +752,42 @@ export class VisualMetadataManager {
     }
 
     return obj;
+  }
+
+  /**
+   * Preserves boolean-like attribute values to prevent XMLBuilder from treating them as boolean attributes
+   */
+  private preserveBooleanAttributes(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.preserveBooleanAttributes(item));
+    }
+
+    if (obj && typeof obj === 'object') {
+      const preserved: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (key.startsWith('@_')) {
+          // Keep as string and add marker for boolean-like values to prevent XMLBuilder conversion
+          const stringValue = String(value);
+          if (stringValue === 'true' || stringValue === 'false') {
+            preserved[key] = `__PRESERVE__${stringValue}__PRESERVE__`;
+          } else {
+            preserved[key] = stringValue;
+          }
+        } else {
+          preserved[key] = this.preserveBooleanAttributes(value);
+        }
+      }
+      return preserved;
+    }
+
+    return obj;
+  }
+
+  /**
+   * Removes preservation markers from the serialized XML
+   */
+  private cleanupPreservationMarkers(xmlString: string): string {
+    return xmlString.replace(/__PRESERVE__(true|false)__PRESERVE__/g, '$1');
   }
 
   private emitChangeEvent(event: VisualMetadataChangeEvent): void {
