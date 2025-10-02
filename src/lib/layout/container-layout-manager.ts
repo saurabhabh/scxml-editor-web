@@ -4,6 +4,7 @@ import type {
   LayoutStrategy,
   HierarchicalNode,
 } from '@/types/hierarchical-node';
+import { elkLayoutService } from './elk-layout-service';
 
 export interface LayoutOptions {
   padding: number;
@@ -23,6 +24,7 @@ export class ContainerLayoutManager {
 
   /**
    * Arrange children within a parent container
+   * Note: ELK strategies ('elk-*') return Promises and should be awaited
    */
   arrangeChildren(
     parentBounds: Rectangle,
@@ -45,8 +47,40 @@ export class ContainerLayoutManager {
           children,
           layoutOptions
         );
+      case 'elk-layered':
+      case 'elk-force':
+      case 'elk-stress':
+        // ELK strategies are not supported in synchronous context
+        // Fall back to auto layout
+        console.warn(`ELK layout strategy '${strategy.type}' requires async context, falling back to 'auto'`);
+        return this.arrangeAuto(parentBounds, children, layoutOptions);
       default:
         return this.arrangeAuto(parentBounds, children, layoutOptions);
+    }
+  }
+
+  /**
+   * Arrange children within a parent container using async layouts (ELK)
+   * This method should be used when ELK layout is explicitly requested
+   */
+  async arrangeChildrenAsync(
+    parentBounds: Rectangle,
+    children: HierarchicalNode[],
+    strategy: LayoutStrategy,
+    options: Partial<LayoutOptions> = {}
+  ): Promise<ChildPosition[]> {
+    const layoutOptions = { ...this.defaultOptions, ...options };
+
+    switch (strategy.type) {
+      case 'elk-layered':
+        return this.arrangeWithELK(parentBounds, children, strategy, 'layered');
+      case 'elk-force':
+        return this.arrangeWithELK(parentBounds, children, strategy, 'force');
+      case 'elk-stress':
+        return this.arrangeWithELK(parentBounds, children, strategy, 'stress');
+      default:
+        // For non-ELK strategies, just return the synchronous result
+        return this.arrangeChildren(parentBounds, children, strategy, options);
     }
   }
 
@@ -600,5 +634,69 @@ export class ContainerLayoutManager {
         )
       ),
     };
+  }
+
+  /**
+   * Arrange children using ELK (Eclipse Layout Kernel)
+   */
+  private async arrangeWithELK(
+    parentBounds: Rectangle,
+    children: HierarchicalNode[],
+    strategy: LayoutStrategy,
+    algorithm: 'layered' | 'force' | 'stress'
+  ): Promise<ChildPosition[]> {
+    if (children.length === 0) return [];
+
+    try {
+      // Prepare edges (transitions between children)
+      const edges: Array<{ source: string; target: string }> = [];
+
+      // Collect all transitions from children
+      children.forEach((child) => {
+        // Note: Edges are handled separately in the converter
+        // This is a simplified version for container layout
+      });
+
+      // Run ELK layout
+      const positions = await elkLayoutService.computeLayout(children, [], {
+        algorithm,
+        direction: strategy.options?.direction || 'DOWN',
+        edgeRouting: strategy.options?.edgeRouting || 'ORTHOGONAL',
+        spacing: {
+          nodeNode: strategy.options?.spacing?.y || 80,
+          edgeNode: 40,
+          edgeEdge: 20,
+        },
+        padding: {
+          top: 50,
+          right: 50,
+          bottom: 50,
+          left: 50,
+        },
+        hierarchical: strategy.options?.hierarchical ?? true,
+      });
+
+      // Convert ELK positions to ChildPosition format
+      const childPositions: ChildPosition[] = [];
+
+      for (const child of children) {
+        const pos = positions.get(child.id);
+        if (pos) {
+          childPositions.push({
+            id: child.id,
+            x: pos.x + parentBounds.x,
+            y: pos.y + parentBounds.y,
+            width: pos.width,
+            height: pos.height,
+          });
+        }
+      }
+
+      return childPositions;
+    } catch (error) {
+      console.error('ELK layout failed, falling back to auto layout:', error);
+      // Fallback to auto layout if ELK fails
+      return this.arrangeAuto(parentBounds, children, this.defaultOptions);
+    }
   }
 }

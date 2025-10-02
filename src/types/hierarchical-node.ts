@@ -49,11 +49,15 @@ export interface HierarchicalNode extends Node {
 }
 
 export interface LayoutStrategy {
-  type: 'auto' | 'grid' | 'force' | 'manual';
+  type: 'auto' | 'grid' | 'force' | 'manual' | 'elk-layered' | 'elk-force' | 'elk-stress';
   options?: {
     columns?: number;
     spacing?: { x: number; y: number };
     alignment?: 'center' | 'left' | 'right' | 'top' | 'bottom';
+    // ELK-specific options
+    direction?: 'DOWN' | 'UP' | 'RIGHT' | 'LEFT';
+    edgeRouting?: 'ORTHOGONAL' | 'POLYLINE' | 'SPLINES' | 'UNDEFINED';
+    hierarchical?: boolean;
   };
 }
 

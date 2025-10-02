@@ -18,6 +18,7 @@ import {
   type ParsedCondition,
   type ConditionContext,
 } from '@/lib/scxml/condition-evaluator';
+import { elkLayoutService, type ELKLayoutOptions } from '@/lib/layout/elk-layout-service';
 
 export interface XStateMachineConfig {
   id?: string;
@@ -2849,5 +2850,62 @@ export class SCXMLToXStateConverter {
     }
 
     return setup({}).createMachine(fallbackConfig);
+  }
+
+  /**
+   * Apply ELK layout to a graph of nodes and edges
+   * This is an async post-processing step that can be called after convertToReactFlow
+   */
+  async applyELKLayout(
+    nodes: Node[],
+    edges: Edge[],
+    options: ELKLayoutOptions = {}
+  ): Promise<Node[]> {
+    // Convert to HierarchicalNode format
+    const hierarchicalNodes: HierarchicalNode[] = nodes.map((node) => ({
+      ...node,
+      depth: node.parentId ? 1 : 0,
+      childIds: nodes.filter((n) => n.parentId === node.id).map((n) => n.id),
+    })) as HierarchicalNode[];
+
+    // Apply ELK layout
+    const positions = await elkLayoutService.computeLayout(
+      hierarchicalNodes,
+      edges,
+      {
+        algorithm: options.algorithm || 'layered',
+        direction: options.direction || 'DOWN',
+        edgeRouting: options.edgeRouting || 'ORTHOGONAL',
+        spacing: options.spacing || {
+          nodeNode: 80,
+          edgeNode: 40,
+          edgeEdge: 20,
+        },
+        padding: options.padding || {
+          top: 50,
+          right: 50,
+          bottom: 50,
+          left: 50,
+        },
+        hierarchical: options.hierarchical ?? true,
+      }
+    );
+
+    // Apply positions to nodes
+    return nodes.map((node) => {
+      const pos = positions.get(node.id);
+      if (pos) {
+        return {
+          ...node,
+          position: { x: pos.x, y: pos.y },
+          style: {
+            ...node.style,
+            width: pos.width,
+            height: pos.height,
+          },
+        };
+      }
+      return node;
+    });
   }
 }

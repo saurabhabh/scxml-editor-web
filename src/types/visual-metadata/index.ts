@@ -155,7 +155,7 @@ export interface ViewStateMetadata {
  */
 export interface ContainerMetadata {
   /** Layout strategy for child elements */
-  childLayout: 'auto' | 'grid' | 'manual' | 'force';
+  childLayout: 'auto' | 'grid' | 'manual' | 'force' | 'elk-layered' | 'elk-force' | 'elk-stress';
   /** Padding inside the container */
   padding: number;
   /** Minimum container size */
@@ -178,6 +178,17 @@ export interface ContainerMetadata {
     strength: number;
     distance: number;
     iterations: number;
+  };
+  /** ELK layout options */
+  elkOptions?: {
+    algorithm?: 'layered' | 'force' | 'stress' | 'mrtree' | 'radial';
+    direction?: 'DOWN' | 'UP' | 'RIGHT' | 'LEFT';
+    edgeRouting?: 'ORTHOGONAL' | 'POLYLINE' | 'SPLINES' | 'UNDEFINED';
+    spacing?: {
+      nodeNode?: number;
+      edgeNode?: number;
+      edgeEdge?: number;
+    };
   };
 }
 

@@ -24,7 +24,7 @@ import {
   SmartStepEdge,
   SmartStraightEdge,
 } from '@tisoap/react-flow-smart-edge';
-import { ArrowUp, ChevronRight, Home } from 'lucide-react';
+import { ArrowUp, ChevronRight, Home, Network } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import {
   Background,
@@ -179,6 +179,15 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     editingField: 'event' | 'cond';
   } | null>(null);
 
+  // ELK Layout State
+  const [elkAlgorithm, setElkAlgorithm] = React.useState<
+    'layered' | 'force' | 'mrtree' | 'radial'
+  >('force');
+  const [elkDirection, setElkDirection] = React.useState<
+    'DOWN' | 'UP' | 'RIGHT' | 'LEFT'
+  >('DOWN');
+  const [showLayoutOptions, setShowLayoutOptions] = React.useState(false);
+
   // ==================== REFS ====================
   // Position update management
   const isUpdatingPositionRef = React.useRef(false);
@@ -193,6 +202,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   const handleNodeDeleteRef = React.useRef<((nodeId: string) => void) | null>(
     null
   );
+
+  // Hover delay ref
+  const hoverTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // SCXML parsing and metadata
   const parserRef = React.useRef<SCXMLParser | null>(null);
@@ -387,7 +399,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
   // ==================== EDGE HANDLERS ====================
   const handleTransitionLabelChange = React.useCallback(
-    (edgeId: string, newLabel: string, editingField: 'event' | 'cond' = 'event') => {
+    (
+      edgeId: string,
+      newLabel: string,
+      editingField: 'event' | 'cond' = 'event'
+    ) => {
       if (!parserRef.current || !onSCXMLChange) return;
       try {
         const parseResult = parserRef.current.parse(scxmlContent);
@@ -470,7 +486,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         // Set the selected edge for editing
         const hasEvent = !!edge.data?.event;
         const hasCond = !!edge.data?.condition;
-        const initialValue = (hasEvent ? edge.data.event : hasCond ? edge.data.condition : '') || '';
+        const initialValue =
+          (hasEvent ? edge.data.event : hasCond ? edge.data.condition : '') ||
+          '';
         setSelectedEdgeForEdit({
           id: edge.id,
           event: edge.data?.event,
@@ -486,18 +504,31 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   const handleEdgeMouseEnter = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       if (edge.data?.fullLabel) {
-        setHoveredEdge({
-          id: edge.id,
-          fullLabel: edge.data.fullLabel,
-          x: event.clientX,
-          y: event.clientY,
-        });
+        // Clear any existing timeout
+        if (hoverTimeoutRef.current) {
+          clearTimeout(hoverTimeoutRef.current);
+        }
+
+        // Set a delay of 500ms before showing the hover tooltip
+        hoverTimeoutRef.current = setTimeout(() => {
+          setHoveredEdge({
+            id: edge.id,
+            fullLabel: edge.data.fullLabel,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }, 500);
       }
     },
     []
   );
 
   const handleEdgeMouseLeave = useCallback(() => {
+    // Clear the timeout if mouse leaves before the delay expires
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
     setHoveredEdge(null);
   }, []);
 
@@ -912,7 +943,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               offset = (edgeIndex - (parallelEdges.length - 1) / 2) * 60;
             }
 
-            const labelOffsetY = (edgeIndex - (parallelEdges.length - 1) / 2) * 25;
+            const labelOffsetY =
+              (edgeIndex - (parallelEdges.length - 1) / 2) * 25;
             pathOptions = {
               offset,
               borderRadius: 20 + edgeIndex * 10,
@@ -1229,6 +1261,94 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     fitView,
   ]);
 
+  // ==================== ELK LAYOUT HANDLER ====================
+  const handleApplyELKLayout = React.useCallback(async () => {
+    if (!parserRef.current || !onSCXMLChange || !scxmlContent) {
+      console.error('Cannot apply ELK layout: parser or SCXML not available');
+      return;
+    }
+
+    try {
+      const converter = new SCXMLToXStateConverter();
+      const parseResult = parserRef.current.parse(scxmlContent);
+
+      if (!parseResult.success || !parseResult.data) {
+        console.error('Failed to parse SCXML for ELK layout');
+        return;
+      }
+
+      // Get current nodes and edges
+      const currentNodes = [...nodes];
+      const currentEdges = [...edges];
+
+      // Apply ELK layout with selected algorithm and direction
+      const layoutedNodes = await converter.applyELKLayout(
+        currentNodes,
+        currentEdges,
+        {
+          algorithm: elkAlgorithm,
+          direction: elkDirection,
+          edgeRouting: 'ORTHOGONAL',
+          hierarchical: true,
+          spacing: {
+            nodeNode: 80,
+            edgeNode: 40,
+            edgeEdge: 20,
+          },
+        }
+      );
+
+      // Update SCXML with new positions
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(scxmlContent, 'text/xml');
+      const rootElement = doc.documentElement;
+      const namespaceURI = 'urn:x-thingm:viz';
+
+      // Ensure viz namespace is set
+      if (!rootElement.hasAttribute('xmlns:viz')) {
+        rootElement.setAttribute('xmlns:viz', namespaceURI);
+      }
+
+      // Update positions in SCXML
+      layoutedNodes.forEach((node) => {
+        const element = doc.querySelector(`[id="${node.id}"]`);
+        if (element) {
+          const width = node.style?.width || 160;
+          const height = node.style?.height || 80;
+          const newVizValue = `${Math.round(node.position.x)},${Math.round(
+            node.position.y
+          )},${width},${height}`;
+          element.setAttribute('viz:xywh', newVizValue);
+        }
+      });
+
+      const serializer = new XMLSerializer();
+      const updatedSCXML = serializer.serializeToString(doc);
+      onSCXMLChange(updatedSCXML, 'position');
+
+      // Fit view after layout
+      setTimeout(() => {
+        fitView({
+          padding: 0.3,
+          includeHiddenNodes: false,
+          minZoom: 0.5,
+          maxZoom: 2,
+          duration: 800,
+        });
+      }, 100);
+    } catch (error) {
+      console.error('Failed to apply ELK layout:', error);
+    }
+  }, [
+    scxmlContent,
+    onSCXMLChange,
+    nodes,
+    edges,
+    fitView,
+    elkAlgorithm,
+    elkDirection,
+  ]);
+
   // ==================== NODE ENHANCEMENTS ====================
   const nodeEnhancements = React.useMemo(() => {
     const enhancements = new Map();
@@ -1467,8 +1587,29 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       if (positionUpdateTimeoutRef.current) {
         clearTimeout(positionUpdateTimeoutRef.current);
       }
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
     };
   }, []);
+
+  // Close layout options on click outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showLayoutOptions) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.layout-options-panel')) {
+          setShowLayoutOptions(false);
+        }
+      }
+    };
+
+    if (showLayoutOptions) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showLayoutOptions]);
 
   // ==================== RENDER ====================
   return (
@@ -1488,10 +1629,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         </div>
       )}
 
-      <SimulationControls
+      {/* <SimulationControls
         scxmlContent={scxmlContent}
         onStateChange={setCurrentSimulationState}
-      />
+      /> */}
 
       {/* Hierarchy Navigation Controls */}
       <div className='flex items-center gap-2 px-4 py-2 bg-white border-b shadow-sm'>
@@ -1513,6 +1654,66 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         >
           <Home className='h-4 w-4 text-gray-700' />
         </button>
+
+        <div className='h-6 w-px bg-gray-300 mx-1' />
+
+        {/* ELK Layout Controls */}
+        <div className='relative layout-options-panel'>
+          <button
+            onClick={() => setShowLayoutOptions(!showLayoutOptions)}
+            className='p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1'
+            title='Layout Options'
+          >
+            <Network className='h-4 w-4 text-gray-700' />
+          </button>
+
+          {showLayoutOptions && (
+            <div className='absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-50 min-w-[250px]'>
+              <div className='text-xs font-semibold text-gray-700 mb-2'>
+                Layout Algorithm
+              </div>
+              <select
+                value={elkAlgorithm}
+                onChange={(e) => setElkAlgorithm(e.target.value as any)}
+                className='w-full px-2 py-1.5 text-sm border text-gray-800 border-gray-300 rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              >
+                <option value='layered'>Layered (Hierarchical)</option>
+                <option value='force'>Force-Directed</option>
+                <option value='mrtree'>Tree</option>
+                <option value='radial'>Radial</option>
+              </select>
+
+              {/* Only show direction for algorithms that support it */}
+              {(elkAlgorithm === 'layered' || elkAlgorithm === 'mrtree') && (
+                <>
+                  <div className='text-xs font-semibold text-gray-700 mb-2'>
+                    Direction
+                  </div>
+                  <select
+                    value={elkDirection}
+                    onChange={(e) => setElkDirection(e.target.value as any)}
+                    className='w-full px-2 py-1.5 text-sm border text-gray-800 border-gray-300 rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  >
+                    <option value='DOWN'>Top to Bottom</option>
+                    <option value='UP'>Bottom to Top</option>
+                    <option value='RIGHT'>Left to Right</option>
+                    <option value='LEFT'>Right to Left</option>
+                  </select>
+                </>
+              )}
+
+              <button
+                onClick={() => {
+                  handleApplyELKLayout();
+                  setShowLayoutOptions(false);
+                }}
+                className='w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors'
+              >
+                Apply Layout
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className='h-6 w-px bg-gray-300 mx-1' />
 
@@ -1562,14 +1763,22 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             onBlur={() => {
               const newLabel = selectedEdgeForEdit.rawValue || '';
               if (newLabel) {
-                handleTransitionLabelChange(selectedEdgeForEdit.id, newLabel, selectedEdgeForEdit.editingField);
+                handleTransitionLabelChange(
+                  selectedEdgeForEdit.id,
+                  newLabel,
+                  selectedEdgeForEdit.editingField
+                );
               }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 const newLabel = selectedEdgeForEdit.rawValue || '';
                 if (newLabel) {
-                  handleTransitionLabelChange(selectedEdgeForEdit.id, newLabel, selectedEdgeForEdit.editingField);
+                  handleTransitionLabelChange(
+                    selectedEdgeForEdit.id,
+                    newLabel,
+                    selectedEdgeForEdit.editingField
+                  );
                 }
                 setSelectedEdgeForEdit(null);
                 setSelectedTransitions(new Set());
@@ -1579,7 +1788,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               }
             }}
             className='flex-1 px-3 py-1.5 text-sm text-gray-800 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-            placeholder={selectedEdgeForEdit.editingField === 'cond' ? 'Enter condition' : 'Enter event'}
+            placeholder={
+              selectedEdgeForEdit.editingField === 'cond'
+                ? 'Enter condition'
+                : 'Enter event'
+            }
             autoFocus
           />
           <button
