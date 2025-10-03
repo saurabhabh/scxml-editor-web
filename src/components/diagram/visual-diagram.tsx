@@ -1234,6 +1234,16 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
         const newState = createStateElement(newStateId);
         (newState as any)['@_viz:xywh'] = `${x},${y},160,80`;
+
+        // Check if parent has no children - if so, make this the initial state
+        if (parentId) {
+          const parentState = findStateById(scxmlDoc, parentId);
+          if (parentState && !parentState.state) {
+            // This is the first child - set it as initial
+            parentState['@_initial'] = newStateId;
+          }
+        }
+
         addStateToDocument(scxmlDoc, newState, parentId);
 
         const updatedSCXML = parserRef.current!.serialize(scxmlDoc, true);
@@ -1508,21 +1518,24 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
   // Sync nodes with hierarchy navigation changes
   React.useEffect(() => {
-    if (enhancedNodes.length > 0) {
-      setNodes((currentNodes) => {
-        const currentPositions = new Map(
-          currentNodes.map((node) => [node.id, node.position])
-        );
+    setNodes((currentNodes) => {
+      if (enhancedNodes.length === 0) {
+        // Clear nodes when navigating into an empty state
+        return [];
+      }
 
-        return enhancedNodes.map((node) => {
-          const currentPosition = currentPositions.get(node.id);
-          return {
-            ...node,
-            position: currentPosition || node.position,
-          };
-        });
+      const currentPositions = new Map(
+        currentNodes.map((node) => [node.id, node.position])
+      );
+
+      return enhancedNodes.map((node) => {
+        const currentPosition = currentPositions.get(node.id);
+        return {
+          ...node,
+          position: currentPosition || node.position,
+        };
       });
-    }
+    });
   }, [currentParentId, enhancedNodes, setNodes]);
 
   // Auto-fit view when hierarchy level changes
@@ -1554,13 +1567,13 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     }
   }, [currentParentId, fitView, filteredNodes.length]);
 
-  // Set initial state
-  React.useEffect(() => {
-    const initialState = filteredNodes.find((node) => node.data?.isInitial);
-    if (initialState && activeStates.size === 0) {
-      setActiveStates(new Set([initialState.id]));
-    }
-  }, [filteredNodes, activeStates.size]);
+  // Set initial state - disabled to avoid auto-selecting states
+  // React.useEffect(() => {
+  //   const initialState = filteredNodes.find((node) => node.data?.isInitial);
+  //   if (initialState && activeStates.size === 0) {
+  //     setActiveStates(new Set([initialState.id]));
+  //   }
+  // }, [filteredNodes, activeStates.size]);
 
   // Handle keyboard events for edge deletion
   React.useEffect(() => {

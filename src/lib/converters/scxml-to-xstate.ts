@@ -2640,7 +2640,19 @@ export class SCXMLToXStateConverter {
     if (!parentPath) {
       // Check if it's the root initial state
       const rootInitial = this.getAttribute(this.rootScxml, 'initial');
-      return stateId === rootInitial;
+      if (stateId === rootInitial) return true;
+
+      // Also check for <initial> element at root
+      const initialElement = this.getElements(this.rootScxml, 'initial');
+      if (initialElement) {
+        const transition = this.getElements(initialElement, 'transition');
+        if (transition) {
+          const target = this.getAttribute(transition, 'target');
+          if (stateId === target) return true;
+        }
+      }
+
+      return false;
     }
 
     // Find parent state and check its initial attribute
@@ -2650,7 +2662,17 @@ export class SCXMLToXStateConverter {
       const parentInfo = this.stateRegistry.get(parentId);
       if (parentInfo) {
         const parentInitial = this.getAttribute(parentInfo.state, 'initial');
-        return stateId === parentInitial;
+        if (stateId === parentInitial) return true;
+
+        // Also check for <initial> element in parent
+        const initialElement = this.getElements(parentInfo.state, 'initial');
+        if (initialElement) {
+          const transition = this.getElements(initialElement, 'transition');
+          if (transition) {
+            const target = this.getAttribute(transition, 'target');
+            if (stateId === target) return true;
+          }
+        }
       }
     }
 

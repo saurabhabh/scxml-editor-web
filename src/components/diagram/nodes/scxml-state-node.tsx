@@ -3,7 +3,7 @@
 
 import React, { memo, useMemo } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
-import { Circle, Square, Target, Trash2, ArrowDownCircle } from 'lucide-react';
+import { Circle, Square, Target, Trash2, ArrowDownCircle, Plus } from 'lucide-react';
 import {
   visualStylesToCSS,
   getAdditionalClasses,
@@ -375,17 +375,21 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
           </button>
         )}
 
-        {/* Navigate into button - only show for compound states */}
-        {(hasChildren || isCompound) && onNavigateInto && (
+        {/* Navigate into button - show for all states */}
+        {onNavigateInto && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onNavigateInto();
             }}
             className='absolute bottom-2 right-2 p-2 bg-blue-500/90 hover:bg-blue-600 border border-blue-600 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
-            title='Navigate into this state'
+            title={hasChildren ? 'Navigate into this state' : 'Navigate into this state to add children'}
           >
-            <ArrowDownCircle className='h-5 w-5 text-white' />
+            {hasChildren ? (
+              <ArrowDownCircle className='h-5 w-5 text-white' />
+            ) : (
+              <Plus className='h-5 w-5 text-white' />
+            )}
           </button>
         )}
 

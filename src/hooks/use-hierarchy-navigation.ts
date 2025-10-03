@@ -69,10 +69,8 @@ export function useHierarchyNavigation({
           isCompound: hasChildren,
           stateType:
             node.data.stateType || (hasChildren ? 'compound' : 'simple'),
-          // Add navigation handler for compound states
-          onNavigateInto: hasChildren
-            ? () => navigateIntoState(node.id)
-            : undefined,
+          // Add navigation handler for all states (even empty ones)
+          onNavigateInto: () => navigateIntoState(node.id),
         },
         // Update visual style for compound states
         style: {
