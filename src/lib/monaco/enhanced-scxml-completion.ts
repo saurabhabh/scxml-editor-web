@@ -1,3 +1,4 @@
+import { Position } from 'reactflow';
 import type * as monaco from 'monaco-editor';
 import { extractStateIdsFromXML } from '@/lib/utils/state-id-extractor';
 
@@ -728,10 +729,48 @@ function createAttributeSuggestions(
 /**
  * Creates attribute value completion suggestions
  */
+/**
+ * Find the parent state ID at a given line number in the XML
+ */
+export function findParentStateAtPosition(
+  xmlContent: string,
+  lineNumber: number
+): string | undefined {
+  const lines = xmlContent.split('\n');
+  const openTags: string[] = [];
+  // Parse lines up to the cursor position
+  for (let i = 0; i < Math.min(lineNumber, lines.length); i++) {
+    const line = lines[i];
+    // Match opening state tags
+    const openStateMatch = line.match(
+      /<(state|parallel)\s+id=["']([^"']+)["']/
+    );
+    if (openStateMatch) {
+      openTags.push(openStateMatch[2]);
+    }
+    // Match closing state tags
+    const closeStateMatch = line.match(/<\/(state|parallel)>/);
+    if (closeStateMatch && openTags.length > 0) {
+      openTags.pop();
+    }
+
+    // Match self-closing state tags (shouldn't happen but handle it)
+    const selfClosingMatch = line.match(/<(state|parallel)\s+[^>]*\/>/);
+    if (selfClosingMatch) {
+      // Don't add to stack for self-closing tags
+      continue;
+    }
+  }
+
+  // Return the most recent unclosed state
+  return openTags[openTags.length - 1];
+}
+
 function createAttributeValueSuggestions(
   monaco: typeof import('monaco-editor'),
   context: CompletionContext,
-  model: monaco.editor.ITextModel
+  model: monaco.editor.ITextModel,
+  position: monaco.Position
 ): monaco.languages.CompletionItem[] {
   if (!context.currentAttribute) return [];
 
@@ -747,22 +786,32 @@ function createAttributeValueSuggestions(
     const xmlContent = model.getValue();
 
     // Extract all state IDs from the document
-    const stateIdInfos = extractStateIdsFromXML(xmlContent);
-
+    let stateIdInfos = extractStateIdsFromXML(xmlContent);
+    const transitionParentId = findParentStateAtPosition(
+      xmlContent,
+      position.lineNumber
+    );
+    let parentIdOfCurrentParent = stateIdInfos.find(
+      (i) => i.id === transitionParentId // Find the parent state info
+    );
+    stateIdInfos = stateIdInfos.filter(
+      (i) => i.parent === parentIdOfCurrentParent?.parent // Same level states only
+    );
     // Create suggestions for each state ID
     for (const stateInfo of stateIdInfos) {
       // Create a descriptive label showing the state hierarchy
-      const pathLabel = stateInfo.path.length > 1
-        ? stateInfo.path.slice(0, -1).join(' > ') + ' > '
-        : '';
+      const pathLabel =
+        stateInfo.path.length > 1
+          ? stateInfo.path.slice(0, -1).join(' > ') + ' > '
+          : '';
 
       suggestions.push({
         label: stateInfo.id,
         kind: monaco.languages.CompletionItemKind.Reference,
         insertText: stateInfo.id,
-        documentation: `${stateInfo.type.charAt(0).toUpperCase() + stateInfo.type.slice(1)} state${
-          stateInfo.parent ? ` in ${stateInfo.parent}` : ''
-        }`,
+        documentation: `${
+          stateInfo.type.charAt(0).toUpperCase() + stateInfo.type.slice(1)
+        } state${stateInfo.parent ? ` in ${stateInfo.parent}` : ''}`,
         detail: `${pathLabel}${stateInfo.id} (${stateInfo.type})`,
         sortText: stateInfo.id, // Sort alphabetically by ID
         range: undefined as any, // Let Monaco handle the range
@@ -823,7 +872,8 @@ export function createEnhancedSCXMLCompletionProvider(
           suggestions = createAttributeValueSuggestions(
             monaco,
             completionContext,
-            model
+            model,
+            position
           );
           break;
         case 'text':
