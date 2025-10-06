@@ -791,11 +791,15 @@ function createAttributeValueSuggestions(
       xmlContent,
       position.lineNumber
     );
-    let parentIdOfCurrentParent = stateIdInfos.find(
-      (i) => i.id === transitionParentId // Find the parent state info
+
+    // Find the parent state info
+    const parentIdOfCurrentParent = stateIdInfos.find(
+      (i) => i.id === transitionParentId
     );
+
+    // Filter to show only sibling states (same level)
     stateIdInfos = stateIdInfos.filter(
-      (i) => i.parent === parentIdOfCurrentParent?.parent // Same level states only
+      (i) => i.parent === parentIdOfCurrentParent?.parent
     );
     // Create suggestions for each state ID
     for (const stateInfo of stateIdInfos) {
