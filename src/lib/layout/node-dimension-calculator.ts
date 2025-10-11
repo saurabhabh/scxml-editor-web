@@ -20,11 +20,16 @@ export class NodeDimensionCalculator {
   /**
    * Calculate width based on label and state type
    */
-  calculateWidth(label: string, stateType: StateType): number {
+  calculateWidth(label: string, stateType: StateType, isInitial: boolean = false): number {
     // Compound and parallel states need extra padding for visual indicators
-    const basePadding = stateType === 'compound' || stateType === 'parallel'
+    let basePadding = stateType === 'compound' || stateType === 'parallel'
       ? 100  // Extra padding for compound/parallel indicator
       : 80;  // Standard padding for icons and borders
+
+    // Add extra padding for initial states to account for the "Initial" tag (approximately 70px)
+    if (isInitial) {
+      basePadding += 70;
+    }
 
     const minWidth = stateType === 'compound' || stateType === 'parallel'
       ? 200  // Minimum for container states
@@ -78,10 +83,11 @@ export class NodeDimensionCalculator {
     label: string,
     stateType: StateType,
     onentryActionsCount: number = 0,
-    onexitActionsCount: number = 0
+    onexitActionsCount: number = 0,
+    isInitial: boolean = false
   ): NodeDimensions {
     return {
-      width: this.calculateWidth(label, stateType),
+      width: this.calculateWidth(label, stateType, isInitial),
       height: this.calculateHeight(stateType, onentryActionsCount, onexitActionsCount)
     };
   }

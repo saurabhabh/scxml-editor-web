@@ -4,6 +4,7 @@
 // ==================== IMPORTS ====================
 import { useHierarchyNavigation } from '@/hooks/use-hierarchy-navigation';
 import { SCXMLToXStateConverter } from '@/lib/converters/scxml-to-xstate';
+import { nodeDimensionCalculator } from '@/lib/layout/node-dimension-calculator';
 import { VisualMetadataManager } from '@/lib/metadata';
 import { SCXMLParser } from '@/lib/parsers/scxml-parser';
 import {
@@ -647,7 +648,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               let finalSCXML = parserRef.current.serialize(scxmlDoc, true);
 
               // Persist handle information (with intelligent defaults)
-              const { UpdateTransitionHandlesCommand } = require('@/lib/commands');
+              const {
+                UpdateTransitionHandlesCommand,
+              } = require('@/lib/commands');
               const handleCommand = new UpdateTransitionHandlesCommand(
                 params.source!,
                 params.target!,
@@ -1120,8 +1123,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     (event: React.MouseEvent, edge: Edge) => {
       event.stopPropagation();
 
-      // Check if Alt/Option key is pressed and edge is already selected - add waypoint
-      if (event.altKey && selectedTransitions.has(edge.id)) {
+      // Check if Shift key is pressed and edge is already selected - add waypoint
+      if (event.shiftKey && selectedTransitions.has(edge.id)) {
         // Get click position in flow coordinates
         const flowPosition = screenToFlowPosition({
           x: event.clientX,
@@ -1179,12 +1182,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             closestSegmentIndex = i;
           }
         }
-
-        console.log(
-          '[Visual Diagram] Alt+Click detected, adding waypoint at segment',
-          closestSegmentIndex,
-          flowPosition
-        );
         handleWaypointAdd(
           edge.id,
           flowPosition.x,
@@ -1695,14 +1692,34 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           }
         }
 
-        const newState = createStateElement(newStateId);
-        (newState as any)['@_viz:xywh'] = `${x},${y},160,80`;
-
-        // Check if parent has no children - if so, make this the initial state
+        // Check if this will be the initial state (parent has no children)
+        let isInitial = false;
         if (parentId) {
           const parentState = findStateById(scxmlDoc, parentId);
           if (parentState && !parentState.state) {
-            // This is the first child - set it as initial
+            isInitial = true;
+          }
+        }
+
+        // Calculate dimensions using the NodeDimensionCalculator
+        // This accounts for the "Initial" tag width when isInitial is true
+        const dimensions = nodeDimensionCalculator.calculateDimensions(
+          newStateId,
+          'simple',
+          0,
+          0,
+          isInitial
+        );
+
+        const newState = createStateElement(newStateId);
+        (newState as any)[
+          '@_viz:xywh'
+        ] = `${x},${y},${dimensions.width},${dimensions.height}`;
+
+        // Set the state as initial if it's the first child
+        if (isInitial && parentId) {
+          const parentState = findStateById(scxmlDoc, parentId);
+          if (parentState) {
             parentState['@_initial'] = newStateId;
           }
         }
@@ -1974,7 +1991,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     // 1. Coming from history (undo/redo), OR
     // 2. Not currently updating positions from a drag operation
     // This runs whenever enhancedNodes changes (which happens after parsing)
-    if ((isUpdatingFromHistory || !isUpdatingPositionRef.current) && enhancedNodes.length > 0) {
+    if (
+      (isUpdatingFromHistory || !isUpdatingPositionRef.current) &&
+      enhancedNodes.length > 0
+    ) {
       setNodes(enhancedNodes);
 
       const selectableEdges = hierarchyFilteredEdges.map((edge) => ({

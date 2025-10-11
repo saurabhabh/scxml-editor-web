@@ -65,7 +65,7 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
         <>
           Select an edge, then{' '}
           <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
-            Alt+Click
+            Shift+Click
           </kbd>{' '}
           to add waypoints
         </>
@@ -73,8 +73,7 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
     },
     {
       tab: 'visual' as const,
-      content:
-        'Click the plus icon on a simple state to add a child state.',
+      content: 'Click the plus icon on a simple state to add a child state.',
     },
     {
       tab: 'visual' as const,
