@@ -1648,26 +1648,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         const scxmlDoc = parseResult.data;
         let parentId: string | undefined = undefined;
 
+        // Only set parentId if we're inside a specific parent (hierarchy navigation)
+        // Otherwise leave it undefined to add at true root level
         if (currentParentId) {
           parentId = currentParentId;
-        } else {
-          const rootStates = nodes.filter((n) => !n.parentId);
-          for (const node of rootStates) {
-            const hasChildren = nodes.some((n) => n.parentId === node.id);
-            if (hasChildren || node.data?.stateType === 'compound') {
-              parentId = node.id;
-              break;
-            }
-          }
-
-          if (!parentId) {
-            const nonFinalState = rootStates.find(
-              (n) => n.data?.stateType !== 'final'
-            );
-            if (nonFinalState) {
-              parentId = nonFinalState.id;
-            }
-          }
         }
 
         let x = 100;
