@@ -75,6 +75,10 @@ export interface DiagramMetadata {
     source?: { x: number; y: number };
     target?: { x: number; y: number };
   };
+  /** Source handle ID (top, bottom, left, right) */
+  sourceHandle?: 'top' | 'bottom' | 'left' | 'right';
+  /** Target handle ID (top, bottom, left, right) */
+  targetHandle?: 'top' | 'bottom' | 'left' | 'right';
 }
 
 /**

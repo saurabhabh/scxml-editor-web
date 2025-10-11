@@ -28,12 +28,15 @@ export class SCXMLValidator {
   private xmlContent?: string;
   private elementPositions: Map<any, { line: number; column: number }> = new Map();
   private reportedErrors: Set<string> = new Set();
+  // Parent-child mapping for hierarchy tracking
+  private stateParentMap: Map<string, string | null> = new Map();
 
   validate(scxml: SCXMLElement, xmlContent?: string): ValidationError[] {
     this.xmlContent = xmlContent;
     this.elementPositions.clear();
     this.reportedErrors.clear();
-    
+    this.stateParentMap.clear();
+
     // Parse positions if XML content is provided
     if (xmlContent) {
       this.parseElementPositions(xmlContent);
@@ -44,6 +47,9 @@ export class SCXMLValidator {
 
     // Collect all state IDs first
     this.collectStateIds(scxml, stateIds);
+
+    // Build parent-child hierarchy map
+    this.buildStateHierarchy(scxml);
 
     // Perform all validation checks
     this.validateStateReferences(scxml, stateIds, errors);
@@ -59,6 +65,9 @@ export class SCXMLValidator {
 
     // Comprehensive attribute validation
     this.validateAllElementAttributes(scxml, errors);
+
+    // Cross-hierarchy transition validation (1C requirement)
+    this.validateCrossHierarchyTransitions(scxml, errors);
 
     return this.deduplicateErrors(errors);
   }
@@ -181,6 +190,149 @@ export class SCXMLValidator {
       histories.forEach((h: HistoryElement) => {
         if (h['@_id']) {
           stateIds.add(h['@_id']);
+        }
+      });
+    }
+  }
+
+  /**
+   * Build parent-child hierarchy map for cross-hierarchy validation
+   */
+  private buildStateHierarchy(scxml: SCXMLElement): void {
+    // Process root-level states (parent = null)
+    if (scxml.state) {
+      const states = Array.isArray(scxml.state) ? scxml.state : [scxml.state];
+      states.forEach((state) => {
+        if (state['@_id']) {
+          this.stateParentMap.set(state['@_id'], null);
+        }
+        this.buildStateHierarchyFromState(state, state['@_id'] || null);
+      });
+    }
+
+    if (scxml.parallel) {
+      const parallels = Array.isArray(scxml.parallel)
+        ? scxml.parallel
+        : [scxml.parallel];
+      parallels.forEach((parallel) => {
+        if (parallel['@_id']) {
+          this.stateParentMap.set(parallel['@_id'], null);
+        }
+        this.buildStateHierarchyFromParallel(parallel, parallel['@_id'] || null);
+      });
+    }
+
+    if (scxml.final) {
+      const finals = Array.isArray(scxml.final) ? scxml.final : [scxml.final];
+      finals.forEach((final) => {
+        if (final['@_id']) {
+          this.stateParentMap.set(final['@_id'], null);
+        }
+      });
+    }
+  }
+
+  private buildStateHierarchyFromState(
+    state: StateElement,
+    parentId: string | null
+  ): void {
+    // Process child states
+    if (state.state) {
+      const states = Array.isArray(state.state) ? state.state : [state.state];
+      states.forEach((childState) => {
+        if (childState['@_id']) {
+          this.stateParentMap.set(childState['@_id'], parentId);
+        }
+        this.buildStateHierarchyFromState(
+          childState,
+          childState['@_id'] || parentId
+        );
+      });
+    }
+
+    // Process child parallel states
+    if (state.parallel) {
+      const parallels = Array.isArray(state.parallel)
+        ? state.parallel
+        : [state.parallel];
+      parallels.forEach((parallel) => {
+        if (parallel['@_id']) {
+          this.stateParentMap.set(parallel['@_id'], parentId);
+        }
+        this.buildStateHierarchyFromParallel(
+          parallel,
+          parallel['@_id'] || parentId
+        );
+      });
+    }
+
+    // Process child final states
+    if (state.final) {
+      const finals = Array.isArray(state.final) ? state.final : [state.final];
+      finals.forEach((final) => {
+        if (final['@_id']) {
+          this.stateParentMap.set(final['@_id'], parentId);
+        }
+      });
+    }
+
+    // Process child history states
+    if (state.history) {
+      const histories = Array.isArray(state.history)
+        ? state.history
+        : [state.history];
+      histories.forEach((history) => {
+        if (history['@_id']) {
+          this.stateParentMap.set(history['@_id'], parentId);
+        }
+      });
+    }
+  }
+
+  private buildStateHierarchyFromParallel(
+    parallel: ParallelElement,
+    parentId: string | null
+  ): void {
+    // Process child states
+    if (parallel.state) {
+      const states = Array.isArray(parallel.state)
+        ? parallel.state
+        : [parallel.state];
+      states.forEach((childState: StateElement) => {
+        if (childState['@_id']) {
+          this.stateParentMap.set(childState['@_id'], parentId);
+        }
+        this.buildStateHierarchyFromState(
+          childState,
+          childState['@_id'] || parentId
+        );
+      });
+    }
+
+    // Process child parallel states
+    if (parallel.parallel) {
+      const parallels = Array.isArray(parallel.parallel)
+        ? parallel.parallel
+        : [parallel.parallel];
+      parallels.forEach((childParallel: ParallelElement) => {
+        if (childParallel['@_id']) {
+          this.stateParentMap.set(childParallel['@_id'], parentId);
+        }
+        this.buildStateHierarchyFromParallel(
+          childParallel,
+          childParallel['@_id'] || parentId
+        );
+      });
+    }
+
+    // Process child history states
+    if (parallel.history) {
+      const histories = Array.isArray(parallel.history)
+        ? parallel.history
+        : [parallel.history];
+      histories.forEach((history: HistoryElement) => {
+        if (history['@_id']) {
+          this.stateParentMap.set(history['@_id'], parentId);
         }
       });
     }
@@ -1753,20 +1905,139 @@ export class SCXMLValidator {
            `The 'expr' attribute specifies what to log and is required for all <log> elements.`;
   }
 
+  /**
+   * Validate cross-hierarchy transitions (Milestone 5 - 1C)
+   * Detects transitions from state in one hierarchy level to state in another level
+   */
+  private validateCrossHierarchyTransitions(
+    scxml: SCXMLElement,
+    errors: ValidationError[]
+  ): void {
+    this.validateCrossHierarchyInElement(scxml, errors);
+  }
+
+  private validateCrossHierarchyInElement(
+    element: SCXMLElement | StateElement | ParallelElement,
+    errors: ValidationError[]
+  ): void {
+    const elementId = (element as any)['@_id'];
+
+    // Check transitions in this element
+    if ((element as any).transition) {
+      const transitions = Array.isArray((element as any).transition)
+        ? (element as any).transition
+        : [(element as any).transition];
+
+      transitions.forEach((transition: TransitionElement) => {
+        if (transition['@_target'] && elementId) {
+          const targets = transition['@_target'].split(/\s+/);
+
+          targets.forEach((targetId) => {
+            // Check if source and target have the same parent
+            const sourceParent = this.stateParentMap.get(elementId);
+            const targetParent = this.stateParentMap.get(targetId);
+
+            // Only validate if both states exist in our hierarchy map
+            if (sourceParent !== undefined && targetParent !== undefined) {
+              // Cross-hierarchy transition detected
+              if (sourceParent !== targetParent) {
+                const event = transition['@_event'] || '';
+                const cond = transition['@_cond'] || '';
+                const transitionInfo = [event, cond].filter(Boolean).join(' [') + (cond ? ']' : '');
+
+                // Find line/column for this transition in XML
+                const position = this.findTransitionPosition(elementId, targetId, event, cond);
+
+                errors.push({
+                  message: `Cross-hierarchy transition not allowed: State '${elementId}' ${transitionInfo ? `(${transitionInfo}) ` : ''}cannot transition to '${targetId}' - they are at different hierarchy levels. Transitions must only occur between states with the same parent.`,
+                  severity: 'error',
+                  line: position?.line,
+                  column: position?.column,
+                });
+              }
+            }
+          });
+        }
+      });
+    }
+
+    // Recursively check child states
+    if (element.state) {
+      const states = Array.isArray(element.state)
+        ? element.state
+        : [element.state];
+      states.forEach((state) =>
+        this.validateCrossHierarchyInElement(state, errors)
+      );
+    }
+
+    // Recursively check child parallel states
+    if (element.parallel) {
+      const parallels = Array.isArray(element.parallel)
+        ? element.parallel
+        : [element.parallel];
+      parallels.forEach((parallel) =>
+        this.validateCrossHierarchyInElement(parallel, errors)
+      );
+    }
+  }
+
+  /**
+   * Find the line/column position of a specific transition in the XML
+   */
+  private findTransitionPosition(
+    sourceStateId: string,
+    targetStateId: string,
+    event?: string,
+    cond?: string
+  ): { line: number; column: number } | undefined {
+    if (!this.xmlContent) return undefined;
+
+    const lines = this.xmlContent.split('\n');
+
+    // Search for the transition element
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const lineNumber = lineIndex + 1;
+
+      // Look for transition tags
+      if (line.includes('<transition')) {
+        // Check if this transition matches our criteria
+        const hasTarget = line.includes(`target="${targetStateId}"`);
+        const hasEvent = event ? line.includes(`event="${event}"`) : true;
+        const hasCond = cond ? line.includes(`cond="${cond}"`) : !line.includes('cond=');
+
+        if (hasTarget && hasEvent && hasCond) {
+          const columnIndex = line.indexOf('<transition');
+          if (columnIndex !== -1) {
+            return {
+              line: lineNumber,
+              column: columnIndex + 1,
+            };
+          }
+        }
+      }
+    }
+
+    // Fallback: just find any transition element
+    const position = this.findElementPosition('transition', '');
+    return position;
+  }
+
   private deduplicateErrors(errors: ValidationError[]): ValidationError[] {
     const seen = new Set<string>();
     const deduplicated: ValidationError[] = [];
-    
+
     for (const error of errors) {
       // Create a key based on message and position for deduplication
       const key = `${error.message}_${error.line || 'no-line'}_${error.column || 'no-col'}`;
-      
+
       if (!seen.has(key)) {
         seen.add(key);
         deduplicated.push(error);
       }
     }
-    
+
     return deduplicated;
   }
 }

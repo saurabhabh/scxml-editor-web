@@ -21,6 +21,14 @@ export function ValidationPanel({
 
   const errorCount = errors.filter((e) => e.severity === 'error').length;
   const warningCount = errors.filter((e) => e.severity === 'warning').length;
+
+  // Sort errors first, then warnings
+  const sortedErrors = [...errors].sort((a, b) => {
+    if (a.severity === 'error' && b.severity === 'warning') return -1;
+    if (a.severity === 'warning' && b.severity === 'error') return 1;
+    return 0;
+  });
+
   return (
     <div className='bg-white border rounded-lg shadow-sm'>
       <div className='flex items-center justify-between p-4 border-b'>
@@ -61,7 +69,7 @@ export function ValidationPanel({
             </div>
 
             <div className='space-y-2 max-h-96 overflow-y-auto'>
-              {errors.map((error, index) => (
+              {sortedErrors.map((error, index) => (
                 <ValidationErrorItem
                   key={index}
                   error={error}
@@ -118,9 +126,9 @@ function ValidationErrorItem({ error, onClick }: ValidationErrorItemProps) {
           )}
         </div>
 
-        <div className='ml-3 flex-1'>
+        <div className='ml-3 flex-1 min-w-0'>
           <p
-            className={`text-sm font-medium ${
+            className={`text-sm font-medium break-words ${
               isError ? 'text-red-800' : 'text-yellow-800'
             }`}
           >

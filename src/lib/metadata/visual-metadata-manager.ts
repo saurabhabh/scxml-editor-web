@@ -1,8 +1,11 @@
 /**
  * Visual Metadata Manager
  *
- * Handles extraction, manipulation, and serialization of visual metadata
+ * Handles extraction and serialization of visual metadata
  * stored in the custom XML namespace xmlns:visual="http://visual-scxml-editor/metadata"
+ *
+ * Note: This manager is read-only. All mutations to visual metadata must be done
+ * through SCXML commands that update the SCXML content directly.
  */
 
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
@@ -17,7 +20,6 @@ import type {
   VisualMetadataValidationResult,
   VisualMetadataValidationError,
   VisualMetadataValidationWarning,
-  VisualMetadataChangeEvent,
   Waypoint,
   ActionNamespaceMetadata,
   ViewStateMetadata,
@@ -32,7 +34,6 @@ export class VisualMetadataManager {
   private readonly namespaceURI: string;
   private readonly namespacePrefix: string;
   private metadataStore = new Map<string, ElementVisualMetadata>();
-  private changeListeners: ((event: VisualMetadataChangeEvent) => void)[] = [];
 
   constructor(
     namespaceURI = VISUAL_METADATA_CONSTANTS.NAMESPACE_URI,
@@ -69,11 +70,14 @@ export class VisualMetadataManager {
       metadata.style = style;
     }
 
-    // Note: Diagram metadata, action namespace metadata, and view state metadata
-    // extraction removed per new requirements - only viz:xywh and viz:rgb are supported
+    // Extract diagram metadata (waypoints for transitions)
+    const diagram = this.extractDiagramMetadata(element);
+    if (diagram && Object.keys(diagram).length > 0) {
+      metadata.diagram = diagram;
+    }
 
     // Only return metadata if we found something
-    const hasMetadata = metadata.layout || metadata.style;
+    const hasMetadata = metadata.layout || metadata.style || metadata.diagram;
 
     if (hasMetadata) {
       this.metadataStore.set(elementId, metadata);
@@ -103,38 +107,6 @@ export class VisualMetadataManager {
     return new Map(this.metadataStore);
   }
 
-  /**
-   * Update visual metadata for an element
-   */
-  updateVisualMetadata(
-    elementId: string,
-    metadata: Partial<VisualMetadata>
-  ): void {
-    const existing = this.metadataStore.get(elementId);
-    const previousMetadata = existing ? { ...existing } : undefined;
-
-    const updated: ElementVisualMetadata = {
-      ...(existing || {
-        elementId,
-        elementType: 'state',
-      }),
-      ...metadata,
-      elementId, // Ensure elementId is preserved
-      lastModified: Date.now(),
-    };
-
-    this.metadataStore.set(elementId, updated);
-
-    // Emit change event
-    this.emitChangeEvent({
-      type: existing ? 'update' : 'create',
-      elementId,
-      previousMetadata,
-      newMetadata: updated,
-      timestamp: Date.now(),
-      source: 'api',
-    });
-  }
 
   /**
    * Get visual metadata for an element
@@ -143,25 +115,7 @@ export class VisualMetadataManager {
     return this.metadataStore.get(elementId);
   }
 
-  /**
-   * Remove visual metadata for an element
-   */
-  removeVisualMetadata(elementId: string): boolean {
-    const existing = this.metadataStore.get(elementId);
-    if (existing) {
-      this.metadataStore.delete(elementId);
-      this.emitChangeEvent({
-        type: 'delete',
-        elementId,
-        previousMetadata: existing,
-        newMetadata: existing, // For compatibility
-        timestamp: Date.now(),
-        source: 'api',
-      });
-      return true;
-    }
-    return false;
-  }
+
 
   /**
    * Apply visual metadata to an SCXML element for serialization
@@ -200,8 +154,22 @@ export class VisualMetadataManager {
       // Only keeping fill color as viz:rgb
     }
 
-    // Note: Diagram metadata, action namespace metadata, and view state metadata
-    // are removed per new requirements - only viz:xywh and viz:rgb are supported
+    // Apply diagram metadata (waypoints for transitions)
+    if (metadata.diagram) {
+      // Serialize waypoints as viz:waypoints="x1,y1;x2,y2;x3,y3"
+      if (metadata.diagram.waypoints && metadata.diagram.waypoints.length > 0) {
+        const waypointString = metadata.diagram.waypoints
+          .map((wp) => `${wp.x},${wp.y}`)
+          .join(';');
+        updatedElement[`@_${this.namespacePrefix}:waypoints`] = waypointString;
+      }
+
+      // Serialize curve type if present
+      if (metadata.diagram.curveType) {
+        updatedElement[`@_${this.namespacePrefix}:curve-type`] =
+          metadata.diagram.curveType;
+      }
+    }
 
     return updatedElement;
   }
@@ -358,26 +326,6 @@ export class VisualMetadataManager {
     };
   }
 
-  /**
-   * Add change listener
-   */
-  addChangeListener(
-    listener: (event: VisualMetadataChangeEvent) => void
-  ): void {
-    this.changeListeners.push(listener);
-  }
-
-  /**
-   * Remove change listener
-   */
-  removeChangeListener(
-    listener: (event: VisualMetadataChangeEvent) => void
-  ): void {
-    const index = this.changeListeners.indexOf(listener);
-    if (index !== -1) {
-      this.changeListeners.splice(index, 1);
-    }
-  }
 
   /**
    * Get all metadata as a map
@@ -414,7 +362,7 @@ export class VisualMetadataManager {
     // Parse new viz:xywh format: "x,y,width,height" (comma-separated)
     const xywh = this.getVisualAttribute(element, 'xywh');
     if (xywh) {
-      const parts = xywh.trim().split(/\s+/);
+      const parts = xywh.trim().split(',').map(s => s.trim());
       if (parts.length >= 4) {
         layout.x = parseFloat(parts[0]);
         layout.y = parseFloat(parts[1]);
@@ -558,7 +506,7 @@ export class VisualMetadataManager {
 
   private parseWaypoints(waypointsString: string): Waypoint[] {
     return waypointsString
-      .split(/\s+/)
+      .split(';')
       .map((point) => {
         const [x, y] = point.split(',').map((s) => parseFloat(s.trim()));
         return !isNaN(x) && !isNaN(y) ? { x, y } : null;
@@ -788,15 +736,5 @@ export class VisualMetadataManager {
    */
   private cleanupPreservationMarkers(xmlString: string): string {
     return xmlString.replace(/__PRESERVE__(true|false)__PRESERVE__/g, '$1');
-  }
-
-  private emitChangeEvent(event: VisualMetadataChangeEvent): void {
-    for (const listener of this.changeListeners) {
-      try {
-        listener(event);
-      } catch (error) {
-        console.error('Error in visual metadata change listener:', error);
-      }
-    }
   }
 }

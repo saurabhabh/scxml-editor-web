@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { Code, Workflow, FileText } from 'lucide-react';
+import { InlineTipsCarousel } from './inline-tips-carousel';
 
 interface TwoTabLayoutProps {
   codeEditor: React.ReactNode;
@@ -27,6 +28,76 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
   const handleTabChange = useCallback((tab: TabType) => {
     setActiveTab(tab);
   }, []);
+
+  // Tips for the carousel
+  const editorTips = [
+    {
+      tab: 'code' as const,
+      content: (
+        <>
+          Press{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            Ctrl+Space
+          </kbd>{' '}
+          for autocomplete suggestions
+        </>
+      ),
+    },
+    {
+      tab: 'both' as const,
+      content: (
+        <>
+          Use{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            Ctrl+Z
+          </kbd>{' '}
+          to undo and{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            Ctrl+Y
+          </kbd>{' '}
+          to redo changes
+        </>
+      ),
+    },
+    {
+      tab: 'visual' as const,
+      content: (
+        <>
+          Select an edge, then{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            Alt+Click
+          </kbd>{' '}
+          to add waypoints
+        </>
+      ),
+    },
+    {
+      tab: 'visual' as const,
+      content:
+        'Click the plus icon on a simple state to add a child state.',
+    },
+    {
+      tab: 'visual' as const,
+      content:
+        'Click the down arrow on a compound state to navigate inside it.',
+    },
+    {
+      tab: 'visual' as const,
+      content: 'Click the network icon for auto-layout options',
+    },
+    {
+      tab: 'visual' as const,
+      content: (
+        <>
+          Press{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            Delete
+          </kbd>{' '}
+          to remove selected states or transitions
+        </>
+      ),
+    },
+  ];
 
   return (
     <div className='h-full flex flex-col'>
@@ -75,23 +146,15 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
           </button>
         </div>
 
-        {/* Hint for autocomplete - only show in Code Editor tab */}
-        {activeTab === 'code' && (
-          <div className='px-6 text-xs text-gray-500 flex items-center space-x-1'>
-            <span className='font-medium'>💡 Tip:</span>
-            <span>
-              Press{' '}
-              <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
-                &#34;
-              </kbd>{' '}
-              or{' '}
-              <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
-                Ctrl+Space
-              </kbd>{' '}
-              for suggestions
-            </span>
-          </div>
-        )}
+        {/* Tips Carousel */}
+        <div className='px-6'>
+          <InlineTipsCarousel
+            tips={editorTips}
+            activeTab={activeTab}
+            autoAdvance={true}
+            autoAdvanceInterval={6000}
+          />
+        </div>
       </div>
 
       {/* Content Area */}
@@ -114,6 +177,38 @@ export const SplitPanelLayout: React.FC<TwoTabLayoutProps> = ({
   fileInfo,
   actions,
 }) => {
+  // Tips for the carousel
+  const editorTips = [
+    {
+      tab: 'code' as const,
+      content: (
+        <>
+          Press{' '}
+          <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
+            Ctrl+Space
+          </kbd>{' '}
+          for autocomplete
+        </>
+      ),
+    },
+    {
+      tab: 'code' as const,
+      content: (
+        <>
+          Type{' '}
+          <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
+            &quot;
+          </kbd>{' '}
+          inside tags for attributes
+        </>
+      ),
+    },
+    {
+      tab: 'both' as const,
+      content: 'Undo/Redo with Ctrl+Z and Ctrl+Y',
+    },
+  ];
+
   return (
     <div className='h-full flex flex-col'>
       {/* Header */}
@@ -146,20 +241,12 @@ export const SplitPanelLayout: React.FC<TwoTabLayoutProps> = ({
                     Code Editor
                   </span>
                 </div>
-                <div className='text-xs text-gray-500 flex items-center space-x-1'>
-                  <span className='font-medium'>💡 Tip:</span>
-                  <span>
-                    Press{' '}
-                    <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
-                      &#34;
-                    </kbd>{' '}
-                    or{' '}
-                    <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
-                      Ctrl+Space
-                    </kbd>{' '}
-                    for suggestions
-                  </span>
-                </div>
+                <InlineTipsCarousel
+                  tips={editorTips}
+                  activeTab='code'
+                  autoAdvance={true}
+                  autoAdvanceInterval={6000}
+                />
               </div>
               <div className='flex-1 p-4 bg-white overflow-hidden'>
                 {codeEditor}

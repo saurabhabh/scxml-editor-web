@@ -2,8 +2,21 @@
 'use client';
 
 import React, { memo, useMemo } from 'react';
-import { Handle, Position, type NodeProps, useStore } from 'reactflow';
-import { Circle, Square, Target, Trash2, ArrowDownCircle, Plus } from 'lucide-react';
+import {
+  Handle,
+  Position,
+  type NodeProps,
+  useStore,
+  NodeResizer,
+} from 'reactflow';
+import {
+  Circle,
+  Square,
+  Target,
+  Trash2,
+  ArrowDownCircle,
+  Plus,
+} from 'lucide-react';
 import {
   visualStylesToCSS,
   getAdditionalClasses,
@@ -43,6 +56,8 @@ export interface SCXMLStateNodeData {
   hasChildren?: boolean;
   isCompound?: boolean;
   onNavigateInto?: () => void;
+  // Resize capability
+  onResize?: (x: number, y: number, width: number, height: number) => void;
 }
 
 export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
@@ -69,6 +84,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       hasChildren = false,
       isCompound = false,
       onNavigateInto,
+      onResize,
     } = data;
 
     const [editingLabel, setEditingLabel] = React.useState(false);
@@ -228,12 +244,6 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       ...(data.height && { height: data.height }),
     };
 
-    // Debug logging for height changes
-    React.useEffect(() => {
-      if (data.height) {
-      }
-    }, [data.height, data.width, label, data.label]);
-
     // Get additional classes for shadows, transitions, etc.
     const additionalClasses = visualStyles
       ? getAdditionalClasses(visualStyles, isActive, selected)
@@ -295,184 +305,255 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     };
 
     return (
-      <div
-        className={`${nodeClasses} group`}
-        style={{
-          ...inlineStyles,
-          position: 'relative',
-          zIndex: 10, // Higher z-index to render above edges
-          overflow: 'visible',
-          // Ensure fixed dimensions when specified
-          ...(data.width && { minWidth: data.width, maxWidth: data.width }),
-          ...(data.height && {
-            minHeight: data.height,
-            maxHeight: data.height,
-          }),
-        }}
-      >
-        {/* Dynamic connection handles - only show if node has connections */}
-
-        <Handle
-          type='target'
-          position={Position.Top}
-          id='top'
-          style={{
-            left: '50%',
-            top: '0',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10,
-          }}
-          className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
-        />
-        <Handle
-          type='source'
-          position={Position.Bottom}
-          id='bottom'
-          style={{
-            left: '50%',
-            bottom: '0',
-            transform: 'translate(-50%, 50%)',
-            zIndex: 10,
-          }}
-          className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
-        />
-        <Handle
-          type='target'
-          position={Position.Left}
-          id='left'
-          style={{
-            left: '0',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10,
-          }}
-          className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
-        />
-        <Handle
-          type='source'
-          position={Position.Right}
-          id='right'
-          style={{
-            right: '0',
-            top: '50%',
-            transform: 'translate(50%, -50%)',
-            zIndex: 10,
-          }}
-          className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
-        />
-
-        {/* Delete button - only show if onDelete is provided and not initial state */}
-        {onDelete && !isInitial && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
+      <>
+        {/* Node Resizer - only shows when node is selected */}
+        {selected && onResize && (
+          <NodeResizer
+            onResizeEnd={(event, params) => {
+              onResize(params.x, params.y, params.width, params.height);
             }}
-            className='absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
-            title='Delete state'
-          >
-            <Trash2 className='h-4 w-4 text-gray-600 hover:text-red-600 transition-colors' />
-          </button>
+            minWidth={100}
+            minHeight={50}
+            handleClassName='!w-3 !h-3 !bg-blue-500 !border-blue-400 !z-[99999999]'
+            lineClassName='!border-blue-400 !z-[99999998]'
+            handleStyle={{ zIndex: 99999999 }}
+            lineStyle={{ zIndex: 99999998 }}
+            color='#3b82f6'
+            isVisible={selected}
+            shouldResize={() => selected}
+          />
         )}
 
-        {/* Navigate into button - show for all states */}
-        {onNavigateInto && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigateInto();
+        <div
+          className={`${nodeClasses} group`}
+          style={{
+            ...inlineStyles,
+            position: 'relative',
+            zIndex: 9999999, // Higher z-index to render above edges
+            overflow: 'visible',
+          }}
+        >
+          {/* Connection handles - all 4 sides support both incoming and outgoing */}
+          {/* Top handles */}
+          <Handle
+            type='target'
+            position={Position.Top}
+            id='top'
+            style={{
+              left: '50%',
+              top: '0',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
             }}
-            className='absolute bottom-2 right-2 p-2 bg-blue-500/90 hover:bg-blue-600 border border-blue-600 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
-            title={hasChildren ? 'Navigate into this state' : 'Navigate into this state to add children'}
-          >
-            {hasChildren ? (
-              <ArrowDownCircle className='h-5 w-5 text-white' />
-            ) : (
-              <Plus className='h-5 w-5 text-white' />
-            )}
-          </button>
-        )}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+          <Handle
+            type='source'
+            position={Position.Top}
+            id='top'
+            style={{
+              left: '50%',
+              top: '0',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
 
-        <div className={`p-4 ${data.height ? 'h-full overflow-hidden' : ''}`}>
-          {/* State header with icon and name */}
-          <div className='flex items-center justify-between mb-3'>
-            <div className='flex items-center space-x-2 flex-1'>
-              {getStateIcon()}
-              {editingLabel ? (
-                <input
-                  type='text'
-                  value={tempLabel}
-                  onChange={(e) => setTempLabel(e.target.value)}
-                  onBlur={handleLabelSubmit}
-                  onKeyDown={handleLabelKeyDown}
-                  className='font-bold text-gray-900 text-base bg-white border-2 border-blue-400 rounded-lg px-2 py-1 min-w-0 flex-1 shadow-sm'
-                  autoFocus
-                  onClick={(e) => e.stopPropagation()}
-                />
+          {/* Bottom handles */}
+          <Handle
+            type='target'
+            position={Position.Bottom}
+            id='bottom'
+            style={{
+              left: '50%',
+              bottom: '0',
+              transform: 'translate(-50%, 50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+          <Handle
+            type='source'
+            position={Position.Bottom}
+            id='bottom'
+            style={{
+              left: '50%',
+              bottom: '0',
+              transform: 'translate(-50%, 50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+
+          {/* Left handles */}
+          <Handle
+            type='target'
+            position={Position.Left}
+            id='left'
+            style={{
+              left: '0',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+          <Handle
+            type='source'
+            position={Position.Left}
+            id='left'
+            style={{
+              left: '0',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+
+          {/* Right handles */}
+          <Handle
+            type='target'
+            position={Position.Right}
+            id='right'
+            style={{
+              right: '0',
+              top: '50%',
+              transform: 'translate(50%, -50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+          <Handle
+            type='source'
+            position={Position.Right}
+            id='right'
+            style={{
+              right: '0',
+              top: '50%',
+              transform: 'translate(50%, -50%)',
+              zIndex: 10,
+            }}
+            className='!bg-slate-500 !border-white !w-4 !h-4 !border-2 hover:!bg-blue-500 transition-colors'
+          />
+
+          {/* Delete button - only show if onDelete is provided and not initial state */}
+          {onDelete && !isInitial && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className='absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
+              title='Delete state'
+            >
+              <Trash2 className='h-4 w-4 text-gray-600 hover:text-red-600 transition-colors' />
+            </button>
+          )}
+
+          {/* Navigate into button - show for all states */}
+          {onNavigateInto && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateInto();
+              }}
+              className='absolute bottom-2 right-2 p-2 bg-blue-500/90 hover:bg-blue-600 border border-blue-600 rounded-lg shadow-sm transition-all duration-200 opacity-0 hover:opacity-100 group-hover:opacity-70 hover:!opacity-100 z-20 cursor-pointer'
+              title={
+                hasChildren
+                  ? 'Navigate into this state'
+                  : 'Navigate into this state to add children'
+              }
+            >
+              {hasChildren ? (
+                <ArrowDownCircle className='h-5 w-5 text-white' />
               ) : (
-                <span
-                  className='font-bold text-gray-800 text-lg cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors'
-                  onDoubleClick={handleLabelDoubleClick}
-                  title='Double-click to edit state name'
-                >
-                  {label}
-                </span>
+                <Plus className='h-5 w-5 text-white' />
+              )}
+            </button>
+          )}
+
+          <div className={`p-4 ${data.height ? 'h-full overflow-hidden' : ''}`}>
+            {/* State header with icon and name */}
+            <div className='flex items-center justify-between mb-3'>
+              <div className='flex items-center space-x-2 flex-1'>
+                {getStateIcon()}
+                {editingLabel ? (
+                  <input
+                    type='text'
+                    value={tempLabel}
+                    onChange={(e) => setTempLabel(e.target.value)}
+                    onBlur={handleLabelSubmit}
+                    onKeyDown={handleLabelKeyDown}
+                    className='font-bold text-gray-900 text-base bg-white border-2 border-blue-400 rounded-lg px-2 py-1 min-w-0 flex-1 shadow-sm'
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span
+                    className='font-bold text-gray-800 text-lg cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors'
+                    onDoubleClick={handleLabelDoubleClick}
+                    title='Double-click to edit state name'
+                  >
+                    {label}
+                  </span>
+                )}
+              </div>
+              {isInitial && (
+                <div className='bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold shadow-sm border border-green-300'>
+                  Initial
+                </div>
               )}
             </div>
-            {isInitial && (
-              <div className='bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold shadow-sm border border-green-300'>
-                Initial
-              </div>
-            )}
-          </div>
 
-          {/* Actions indicator */}
-          {(hasActions || editingActions) && (
-            <div className='mt-3 pt-3 border-t border-gray-200/50'>
-              {editingActions ? (
-                <div className='space-y-3'>
-                  <div>
-                    <label className='block text-xs font-medium text-gray-700 mb-1'>
-                      Entry Actions (one per line):
-                    </label>
-                    <textarea
-                      value={tempEntryActions}
-                      onChange={(e) => setTempEntryActions(e.target.value)}
-                      className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
-                      placeholder='log("Entering state")'
-                      onClick={(e) => e.stopPropagation()}
-                    />
+            {/* Actions indicator */}
+            {(hasActions || editingActions) && (
+              <div className='mt-3 pt-3 border-t border-gray-200/50'>
+                {editingActions ? (
+                  <div className='space-y-3'>
+                    <div>
+                      <label className='block text-xs font-medium text-gray-700 mb-1'>
+                        Entry Actions (one per line):
+                      </label>
+                      <textarea
+                        value={tempEntryActions}
+                        onChange={(e) => setTempEntryActions(e.target.value)}
+                        className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
+                        placeholder='log("Entering state")'
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div>
+                      <label className='block text-xs font-medium text-gray-700 mb-1'>
+                        Exit Actions (one per line):
+                      </label>
+                      <textarea
+                        value={tempExitActions}
+                        onChange={(e) => setTempExitActions(e.target.value)}
+                        className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
+                        placeholder='log("Exiting state")'
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className='flex space-x-2'>
+                      <button
+                        onClick={handleActionsSubmit}
+                        className='text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600'
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleActionsCancel}
+                        className='text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600'
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className='block text-xs font-medium text-gray-700 mb-1'>
-                      Exit Actions (one per line):
-                    </label>
-                    <textarea
-                      value={tempExitActions}
-                      onChange={(e) => setTempExitActions(e.target.value)}
-                      className='w-full text-xs border border-gray-300 rounded px-2 py-1 min-h-[3rem]'
-                      placeholder='log("Exiting state")'
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                  <div className='flex space-x-2'>
-                    <button
-                      onClick={handleActionsSubmit}
-                      className='text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600'
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={handleActionsCancel}
-                      className='text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600'
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className='flex flex-wrap gap-1'>
-                  {/* {hasEntryActions && (
+                ) : (
+                  <div className='flex flex-wrap gap-1'>
+                    {/* {hasEntryActions && (
                     <span
                       className='bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-blue-200'
                       onDoubleClick={handleActionsDoubleClick}
@@ -490,50 +571,51 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                       Exit ({exitActions.length})
                     </span>
                   )} */}
-                  {onActionsChange && !hasActions && (
-                    <span
-                      className='bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-gray-200'
-                      onDoubleClick={handleActionsDoubleClick}
-                      title='Double-click to add actions'
-                    >
-                      + Add Actions
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* State type indicator for compound/parallel states */}
-          {(stateType === 'compound' || stateType === 'parallel') && (
-            <div className='mt-3 pt-3 border-t border-gray-200/50'>
-              <div className='flex items-center space-x-2'>
-                <span
-                  className={`text-xs uppercase tracking-wide font-medium px-2 py-1 rounded-full ${
-                    stateType === 'compound'
-                      ? 'bg-purple-100 text-purple-700'
-                      : 'bg-orange-100 text-orange-700'
-                  }`}
-                >
-                  {stateType}
-                </span>
-                {stateType === 'parallel' && (
-                  <span className='text-xs text-gray-500'>⚡ Concurrent</span>
+                    {onActionsChange && !hasActions && (
+                      <span
+                        className='bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-gray-200'
+                        onDoubleClick={handleActionsDoubleClick}
+                        title='Double-click to add actions'
+                      >
+                        + Add Actions
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Special indicator for history states */}
-          {label.toLowerCase().includes('history') && (
-            <div className='mt-3 pt-3 border-t border-gray-200/50'>
-              <span className='text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium'>
-                📜 History
-              </span>
-            </div>
-          )}
+            {/* State type indicator for compound/parallel states */}
+            {(stateType === 'compound' || stateType === 'parallel') && (
+              <div className='mt-3 pt-3 border-t border-gray-200/50'>
+                <div className='flex items-center space-x-2'>
+                  <span
+                    className={`text-xs uppercase tracking-wide font-medium px-2 py-1 rounded-full ${
+                      stateType === 'compound'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-orange-100 text-orange-700'
+                    }`}
+                  >
+                    {stateType}
+                  </span>
+                  {stateType === 'parallel' && (
+                    <span className='text-xs text-gray-500'>⚡ Concurrent</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Special indicator for history states */}
+            {label.toLowerCase().includes('history') && (
+              <div className='mt-3 pt-3 border-t border-gray-200/50'>
+                <span className='text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium'>
+                  📜 History
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 );

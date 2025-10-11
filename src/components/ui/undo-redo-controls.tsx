@@ -18,7 +18,8 @@ export const UndoRedoControls: React.FC<UndoRedoControlsProps> = ({
   className = '',
   showTooltips = true,
 }) => {
-  const { canUndo, canRedo, getUndoDescription, getRedoDescription } = useHistoryStore();
+  const { canUndo, canRedo, getUndoDescription, getRedoDescription } =
+    useHistoryStore();
   const historyManager = HistoryManager.getInstance();
 
   const handleUndo = useCallback(() => {
@@ -77,10 +78,10 @@ export const UndoRedoControls: React.FC<UndoRedoControlsProps> = ({
               : 'text-gray-400 cursor-not-allowed'
           }
         `}
-        title={showTooltips ? (undoDescription || 'Undo (Ctrl+Z)') : undefined}
-        aria-label="Undo"
+        title={showTooltips ? undoDescription || 'Undo (Ctrl+Z)' : undefined}
+        aria-label='Undo'
       >
-        <Undo2 className="h-4 w-4" />
+        <Undo2 className='h-4 w-4' />
       </button>
 
       <button
@@ -94,10 +95,10 @@ export const UndoRedoControls: React.FC<UndoRedoControlsProps> = ({
               : 'text-gray-400 cursor-not-allowed'
           }
         `}
-        title={showTooltips ? (redoDescription || 'Redo (Ctrl+Y)') : undefined}
-        aria-label="Redo"
+        title={showTooltips ? redoDescription || 'Redo (Ctrl+Y)' : undefined}
+        aria-label='Redo'
       >
-        <Redo2 className="h-4 w-4" />
+        <Redo2 className='h-4 w-4' />
       </button>
     </div>
   );

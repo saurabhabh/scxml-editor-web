@@ -18,7 +18,12 @@ import {
   type ParsedCondition,
   type ConditionContext,
 } from '@/lib/scxml/condition-evaluator';
-import { elkLayoutService, type ELKLayoutOptions } from '@/lib/layout/elk-layout-service';
+import {
+  elkLayoutService,
+  type ELKLayoutOptions,
+} from '@/lib/layout/elk-layout-service';
+import { nodeDimensionCalculator } from '@/lib/layout/node-dimension-calculator';
+import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
 
 export interface XStateMachineConfig {
   id?: string;
@@ -58,6 +63,12 @@ export class SCXMLToXStateConverter {
   // Map original IDs to safe IDs (without dots) and vice versa
   private idToSafeId: Map<string, string> = new Map();
   private safeIdToId: Map<string, string> = new Map();
+
+  // Store original SCXML content for write-back
+  private originalScxmlContent: string = '';
+
+  // Store initialized SCXML content (with viz:xywh added)
+  private initializedSCXML: string | null = null;
 
   /**
    * Convert state ID to a safe ID for XState (replace dots with underscores)
@@ -383,14 +394,27 @@ export class SCXMLToXStateConverter {
   }
 
   /**
-   * Convert SCXML document to React Flow nodes and edges with hierarchical layout
+   * Convert SCXML document to React Flow nodes and edges with ELK force-directed layout
+   * @async This method is async because it uses ELK layout computation
    */
-  convertToReactFlow(scxmlDoc: SCXMLDocument): {
+  async convertToReactFlow(
+    scxmlDoc: SCXMLDocument,
+    originalXmlContent?: string
+  ): Promise<{
     nodes: Node[];
     edges: Edge[];
-  } {
+    initializedSCXML?: string | null;
+  }> {
     const scxml = scxmlDoc.scxml;
     this.rootScxml = scxml;
+
+    // Store original content for potential write-back
+    if (originalXmlContent) {
+      this.originalScxmlContent = originalXmlContent;
+    }
+
+    // Reset initialized SCXML
+    this.initializedSCXML = null;
 
     // Parse datamodel to get context
     const dataModel = this.getElements(scxml, 'datamodel');
@@ -410,20 +434,24 @@ export class SCXMLToXStateConverter {
     }
 
     const layoutManager = new ContainerLayoutManager();
-    const hierarchicalLayout = this.createHierarchicalLayout(layoutManager);
+    const hierarchicalLayout = await this.createHierarchicalLayout(
+      layoutManager
+    );
 
     return {
       nodes: hierarchicalLayout.nodes,
       edges: hierarchicalLayout.edges,
+      initializedSCXML: this.initializedSCXML,
     };
   }
 
   /**
-   * Create hierarchical layout with proper visual containment
+   * Create hierarchical layout with ELK force-directed positioning
+   * Preserves viz:xywh positions with absolute priority
    */
-  private createHierarchicalLayout(
+  private async createHierarchicalLayout(
     layoutManager: ContainerLayoutManager
-  ): HierarchicalLayout {
+  ): Promise<HierarchicalLayout> {
     const allNodes: HierarchicalNode[] = [];
     const edges: Edge[] = [];
 
@@ -447,8 +475,41 @@ export class SCXMLToXStateConverter {
 
     // No longer need to attach descendants - using native parent-child relationships
 
-    // Position container nodes and their children (including history states as siblings)
-    this.positionHierarchicalNodes(allNodes, layoutManager);
+    // Reset edge pair counts for handle assignment
+    this.edgePairCounts.clear();
+
+    // Collect all transitions/edges BEFORE layout
+    // ELK needs edges to calculate optimal node positions
+    this.collectAllTransitions(this.rootScxml, edges);
+
+    // Apply ELK force-directed layout with viz:xywh priority
+    await this.applyDefaultELKLayout(allNodes, edges);
+
+    // Calculate dimensions for nodes without viz:xywh width/height
+    // Track whether any nodes needed initialization
+    let needsInitialization = false;
+
+    allNodes.forEach((node) => {
+      const nodeData = node.data as any;
+      const hasVizDimensions = nodeData.width !== undefined && nodeData.height !== undefined;
+
+      if (!hasVizDimensions) {
+        // Calculate dimensions using the new simple logic
+        const dims = nodeDimensionCalculator.calculateDimensionsFromNode(node);
+
+        // Store calculated dimensions
+        nodeData.width = dims.width;
+        nodeData.height = dims.height;
+
+        // Mark that this node needs initialization
+        needsInitialization = true;
+      }
+    });
+
+    // If any nodes needed initialization, write back to SCXML
+    if (needsInitialization && this.originalScxmlContent) {
+      this.initializedSCXML = this.writeLayoutToSCXML(allNodes);
+    }
 
     // Update container bounds after layout is complete
     allNodes.forEach((node) => {
@@ -508,15 +569,6 @@ export class SCXMLToXStateConverter {
         }
       }
     });
-
-    // Create a mapping of nested node IDs to proxy node IDs
-    const nestedToProxyMap = new Map<string, string>();
-
-    // Reset edge pair counts for handle assignment
-    this.edgePairCounts.clear();
-
-    // Convert transitions to edges
-    this.collectAllTransitions(this.rootScxml, edges);
 
     // Include history wrapper nodes that should be rendered at the top level
     const historyWrapperNodes = allNodes.filter(
@@ -602,14 +654,9 @@ export class SCXMLToXStateConverter {
     // Check if this is an initial state
     const isInitial = this.isInitialState(stateId, stateInfo.parentPath);
 
-    // Calculate initial position from viz:xywh or auto-calculate
-    let position: { x: number; y: number };
-    if (visualMetadata.x !== undefined && visualMetadata.y !== undefined) {
-      // Use position from viz:xywh
-      position = { x: visualMetadata.x, y: visualMetadata.y };
-    } else {
-      position = this.calculateInitialPosition(stateId, stateInfo);
-    }
+    // Initial position placeholder - will be set by applyDefaultELKLayout()
+    // This placeholder is necessary for node creation but will be overwritten
+    const position: { x: number; y: number } = { x: 0, y: 0 };
 
     // Create base node data
     const baseNodeData: SCXMLStateNodeData = {
@@ -644,186 +691,34 @@ export class SCXMLToXStateConverter {
       (node.data as any).hasVizPosition = true; // Flag to indicate viz position exists
     }
 
-    // Don't apply viz:xywh width/height to avoid affecting node sizing
-    // Only position (vizX/vizY) should be used from viz:xywh
+    // Apply viz:xywh width/height at all levels for NodeResizer compatibility
+    if (
+      visualMetadata.width !== undefined &&
+      visualMetadata.height !== undefined
+    ) {
+      // Top-level dimensions (required by NodeResizer)
+      (node as any).width = visualMetadata.width;
+      (node as any).height = visualMetadata.height;
+
+      // Style-level dimensions
+      (node as any).style = {
+        width: visualMetadata.width,
+        height: visualMetadata.height,
+      };
+
+      // Data-level dimensions (for component access)
+      (node.data as any).width = visualMetadata.width;
+      (node.data as any).height = visualMetadata.height;
+    }
 
     return node;
   }
 
-  /**
-   * Position hierarchical nodes using container layout algorithms
-   */
-  private positionHierarchicalNodes(
-    nodes: HierarchicalNode[],
-    layoutManager: ContainerLayoutManager
-  ): void {
-    // Group nodes by depth level
-    const nodesByDepth = new Map<number, HierarchicalNode[]>();
-    nodes.forEach((node) => {
-      if (!nodesByDepth.has(node.depth)) {
-        nodesByDepth.set(node.depth, []);
-      }
-      nodesByDepth.get(node.depth)!.push(node);
-    });
-
-    // Position nodes level by level, starting from the deepest
-    const maxDepth = Math.max(...Array.from(nodesByDepth.keys()));
-
-    for (let depth = maxDepth; depth >= 0; depth--) {
-      const nodesAtDepth = nodesByDepth.get(depth) || [];
-
-      for (const node of nodesAtDepth) {
-        if (node.childIds && node.childIds.length > 0) {
-          // This is a container - position its children
-          this.positionContainerChildren(node, nodes, layoutManager);
-        }
-      }
-    }
-
-    // Position root level nodes
-    this.positionRootNodes(nodesByDepth.get(0) || [], layoutManager);
-  }
-
-  /**
-   * Position children within a container node with relative coordinates
-   */
-  private positionContainerChildren(
-    containerNode: HierarchicalNode,
-    allNodes: HierarchicalNode[],
-    layoutManager: ContainerLayoutManager
-  ): void {
-    // Get direct children of this container
-    const childNodes = allNodes.filter(
-      (node) =>
-        containerNode.childIds?.includes(node.id) &&
-        this.stateRegistry.get(node.id)?.elementType !== 'history'
-    );
-
-    if (childNodes.length === 0) {
-      containerNode.containerBounds = {
-        x: containerNode.position.x,
-        y: containerNode.position.y,
-        width: 300,
-        height: 200,
-      };
-      return;
-    }
-
-    // Separate containers and simple states
-    const containers = childNodes.filter(
-      (c) => c.childIds && c.childIds.length > 0
-    );
-    const simpleStates = childNodes.filter(
-      (c) => !c.childIds || c.childIds.length === 0
-    );
-
-    let currentY = 30; // Increased padding from top
-
-    // Layout container children first
-    if (containers.length > 0) {
-      const cols = containers.length <= 2 ? containers.length : 2;
-      const rows = Math.ceil(containers.length / cols);
-
-      for (let row = 0; row < rows; row++) {
-        let rowMaxHeight = 0;
-        let currentX = 30; // Increased padding from left
-
-        for (let col = 0; col < cols; col++) {
-          const idx = row * cols + col;
-          if (idx >= containers.length) break;
-
-          const container = containers[idx];
-
-          // Only auto-position if no viz:xywh position exists
-          const hasVizPosition =
-            (container.data as any).hasVizPosition === true;
-
-          if (!hasVizPosition) {
-            // Position relative to parent
-            container.position = {
-              x: currentX,
-              y: currentY + 60, // Header offset
-            };
-          } else {
-            // Use viz position (will be converted to relative later)
-            container.position = {
-              x: (container.data as any).vizX,
-              y: (container.data as any).vizY,
-            };
-          }
-
-          const containerWidth = (container.data as any).width || 250;
-          const containerHeight = (container.data as any).height || 140;
-
-          currentX += containerWidth + 60; // Increased spacing for containers
-          rowMaxHeight = Math.max(rowMaxHeight, containerHeight);
-        }
-        currentY += rowMaxHeight + 50; // Increased vertical spacing
-      }
-    }
-
-    // Layout simple states
-    if (simpleStates.length > 0) {
-      const cols =
-        simpleStates.length <= 3
-          ? simpleStates.length
-          : simpleStates.length <= 6
-          ? 3
-          : 4;
-      const rows = Math.ceil(simpleStates.length / cols);
-
-      let stateIndex = 0;
-      for (let row = 0; row < rows; row++) {
-        let currentX = 30; // Increased padding from left
-        let rowMaxHeight = 0;
-
-        for (
-          let col = 0;
-          col < cols && stateIndex < simpleStates.length;
-          col++
-        ) {
-          const state = simpleStates[stateIndex];
-          const actualWidth =
-            (state.data as any).width ||
-            Math.max(140, ((state.data as any).label || '').length * 10 + 40);
-          const actualHeight = (state.data as any).height || 80;
-
-          // Only auto-position if no viz:xywh position exists
-          const hasVizPosition = (state.data as any).hasVizPosition === true;
-
-          if (!hasVizPosition) {
-            // Position relative to parent
-            state.position = {
-              x: currentX,
-              y: currentY + 60, // Header offset
-            };
-          } else {
-            // Use viz position (will be converted to relative later)
-            state.position = {
-              x: (state.data as any).vizX,
-              y: (state.data as any).vizY,
-            };
-          }
-
-          currentX += actualWidth + 50; // Increased horizontal spacing from 30 to 50
-          rowMaxHeight = Math.max(rowMaxHeight, actualHeight);
-          stateIndex++;
-        }
-        currentY += rowMaxHeight + 40; // Increased vertical spacing from 20 to 40
-      }
-    }
-
-    // Store bounds for reference
-    containerNode.containerBounds = {
-      x: containerNode.position.x,
-      y: containerNode.position.y,
-      width: 400,
-      height: currentY + 100,
-    };
-  }
 
   /**
    * Position history states to wrap around their parent containers
+   * @deprecated Legacy manual positioning - kept for fallback only
+   * Use applyDefaultELKLayout() instead for ELK force-directed layout
    */
   private positionHistoryStates(allNodes: HierarchicalNode[]): void {
     const historyNodes = allNodes.filter(
@@ -883,84 +778,155 @@ export class SCXMLToXStateConverter {
     });
   }
 
+
   /**
-   * Position root level nodes (nodes without parents)
+   * Apply ELK force-directed layout to all nodes
+   * Preserves viz:xywh positions (x,y only) with absolute priority
+   * Ignores width/height from viz:xywh
    */
-  private positionRootNodes(
-    rootNodes: HierarchicalNode[],
-    layoutManager: ContainerLayoutManager
-  ): void {
-    if (rootNodes.length === 0) return;
+  private async applyDefaultELKLayout(
+    nodes: HierarchicalNode[],
+    edges: Edge[]
+  ): Promise<void> {
+    // Step 1: Collect nodes with viz:xywh positions
+    const nodesWithVizPositions = new Map<string, { x: number; y: number }>();
 
-    // Create a virtual container for root nodes
-    const viewportBounds: Rectangle = {
-      x: 50,
-      y: 50,
-      width: 1200,
-      height: 800,
-    };
-
-    const layoutStrategy: LayoutStrategy = { type: 'auto' };
-
-    const positions = layoutManager.arrangeChildren(
-      viewportBounds,
-      rootNodes,
-      layoutStrategy,
-      {
-        padding: -100,
-        spacing: { x: 150, y: 100 },
-        alignment: 'center',
+    nodes.forEach((node) => {
+      const vizX = (node.data as any).vizX;
+      const vizY = (node.data as any).vizY;
+      if (vizX !== undefined && vizY !== undefined) {
+        nodesWithVizPositions.set(node.id, { x: vizX, y: vizY });
       }
-    );
+    });
 
-    // Apply positions to root nodes
-    positions.forEach((pos) => {
-      const node = rootNodes.find((n) => n.id === pos.id);
-      if (node) {
-        // Check if this node has explicit visual metadata positioning
-        const state = this.stateRegistry.get(node.id)?.state;
-        const visualMetadata = state ? this.extractVisualMetadata(state) : {};
-        const hasExplicitVisualPosition =
-          visualMetadata.x !== undefined && visualMetadata.y !== undefined;
+    // Step 2: Run ELK force-directed layout on ALL nodes
+    // ELK will calculate good positions considering the graph structure
+    const positions = await elkLayoutService.computeLayout(nodes, edges, {
+      algorithm: 'layered', // Force-directed by default for organic layouts
+      direction: 'DOWN',
+      edgeRouting: 'ORTHOGONAL',
+      spacing: {
+        nodeNode: 40, // Reduced: Space between nodes
+        edgeNode: 20, // Reduced: Space between edges and nodes
+        edgeEdge: 10, // Reduced: Space between edges
+      },
+      padding: {
+        top: 20,
+        right: 20,
+        bottom: 20,
+        left: 20,
+      },
+      hierarchical: true, // Respect parent-child relationships
+      aspectRatio: 3, // Prefer wider layouts (16:10 ratio) for more compact vertical spacing
+    });
 
-        // Only preserve explicit visual metadata positions,
-        // otherwise use layout manager positions
-        if (!hasExplicitVisualPosition) {
-          node.position = { x: pos.x, y: pos.y };
+    // Step 3: Apply positions - viz:xywh takes ABSOLUTE priority over ELK
+    nodes.forEach((node) => {
+      const vizPosition = nodesWithVizPositions.get(node.id);
+
+      if (vizPosition) {
+        // Use viz:xywh position (highest priority)
+        // This preserves user-defined positions from SCXML
+        node.position = { x: vizPosition.x, y: vizPosition.y };
+      } else {
+        // Use ELK calculated position for nodes without explicit positions
+        const elkPos = positions.get(node.id);
+        if (elkPos) {
+          node.position = { x: elkPos.x, y: elkPos.y };
         }
+        // If no ELK position (shouldn't happen), keep existing position
       }
+
+      // Note: Width/height are now properly handled from viz:xywh
+      // They are applied in createStateNode() and createParallelNode()
     });
   }
 
   /**
-   * Calculate initial position for a node (before layout algorithms)
+   * Write calculated layout (position + dimensions) back to SCXML as viz:xywh attributes
+   * This initializes SCXML files that arrive without viz:xywh
    */
-  private calculateInitialPosition(
-    stateId: string,
-    stateInfo: StateRegistryEntry
-  ): { x: number; y: number } {
-    const depth = stateInfo.depth;
-
-    // For root-level states (depth 0), spread them out to avoid overlap
-    if (depth === 0) {
-      const rootStates = Array.from(this.stateRegistry.entries())
-        .filter(([_, info]) => info.depth === 0)
-        .map(([id]) => id);
-      const index = rootStates.indexOf(stateId);
-
-      return {
-        x: 100 + index * 200, // Spread root states horizontally
-        y: 100,
-      };
+  private writeLayoutToSCXML(nodes: HierarchicalNode[]): string {
+    if (!this.originalScxmlContent) {
+      console.warn('No original SCXML content available for write-back');
+      return '';
     }
 
-    // For nested states, use depth-based offset
-    const baseOffset = depth * 50;
-    return {
-      x: 100 + baseOffset,
-      y: 100 + baseOffset,
-    };
+    try {
+      // Normalize namespace URI in the raw XML before parsing
+      // This handles migration from old namespace URIs
+      let normalizedXml = this.originalScxmlContent;
+
+      // Replace any old namespace URIs with the canonical one
+      const oldNamespacePatterns = [
+        /xmlns:viz\s*=\s*["']http:\/\/scxml-viz\.github\.io\/ns["']/g,
+        /xmlns:viz\s*=\s*["']urn:x-thingm:viz["']/g,
+        /xmlns:ns1\s*=\s*["']http:\/\/scxml-viz\.github\.io\/ns["']/g,
+        /xmlns:ns1\s*=\s*["']urn:x-thingm:viz["']/g,
+      ];
+
+      for (const pattern of oldNamespacePatterns) {
+        normalizedXml = normalizedXml.replace(
+          pattern,
+          `xmlns:viz="${VISUAL_METADATA_CONSTANTS.NAMESPACE_URI}"`
+        );
+      }
+
+      // Also replace ns1: prefixed attributes with viz: prefix
+      normalizedXml = normalizedXml.replace(/\bns1:/g, 'viz:');
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(normalizedXml, 'text/xml');
+
+      // Check for XML parsing errors
+      const parseError = doc.querySelector('parsererror');
+      if (parseError) {
+        console.error('XML parsing error in writeLayoutToSCXML:', parseError.textContent);
+        return '';
+      }
+
+      // Ensure viz namespace is declared on root element with correct URI
+      const root = doc.documentElement;
+      if (root) {
+        // Always set/update the namespace to the canonical URI
+        // This migrates old namespace URIs to the new standard
+        root.setAttribute('xmlns:viz', VISUAL_METADATA_CONSTANTS.NAMESPACE_URI);
+      }
+
+      // Update viz:xywh for each node
+      nodes.forEach((node) => {
+        // Find the state element by ID (could be <state>, <parallel>, or <final>)
+        const stateElement = doc.querySelector(
+          `state[id="${node.id}"], parallel[id="${node.id}"], final[id="${node.id}"]`
+        );
+
+        if (!stateElement) {
+          console.warn(`State element not found for node: ${node.id}`);
+          return;
+        }
+
+        // Get position and dimensions
+        const x = Math.round(node.position.x);
+        const y = Math.round(node.position.y);
+        const width = Math.round((node.data as any).width || 160);
+        const height = Math.round((node.data as any).height || 80);
+
+        // Set viz:xywh attribute in format "x,y,width,height"
+        const vizXywh = `${x},${y},${width},${height}`;
+        stateElement.setAttribute('viz:xywh', vizXywh);
+      });
+
+      // Serialize back to string
+      const serializer = new XMLSerializer();
+      const newContent = serializer.serializeToString(doc);
+
+      return newContent;
+    } catch (error) {
+      console.error('Error in writeLayoutToSCXML:', error);
+      return '';
+    }
   }
+
 
   /**
    * Create XState machine from SCXML document with error handling
@@ -1282,8 +1248,25 @@ export class SCXMLToXStateConverter {
       node.data.hasVizPosition = true; // Flag to indicate viz position exists
     }
 
-    // Don't apply viz:xywh width/height to avoid affecting node sizing
-    // Only position (vizX/vizY) should be used from viz:xywh
+    // Apply viz:xywh width/height at all levels for NodeResizer compatibility
+    if (
+      visualMetadata.width !== undefined &&
+      visualMetadata.height !== undefined
+    ) {
+      // Top-level dimensions (required by NodeResizer)
+      node.width = visualMetadata.width;
+      node.height = visualMetadata.height;
+
+      // Style-level dimensions
+      node.style = {
+        width: visualMetadata.width,
+        height: visualMetadata.height,
+      };
+
+      // Data-level dimensions (for component access)
+      node.data.width = visualMetadata.width;
+      node.data.height = visualMetadata.height;
+    }
 
     return node;
   }
@@ -1344,6 +1327,22 @@ export class SCXMLToXStateConverter {
       }
     }
 
+    // Cross-hierarchy transition validation (Milestone 5 - 1C)
+    // Skip transitions between states at different hierarchy levels
+    const sourceParent = this.parentMap.get(sourceStateId);
+    const targetParent = this.parentMap.get(finalTargetId!);
+
+    // If both states have defined parents, check if they match
+    if (sourceParent !== undefined && targetParent !== undefined) {
+      if (sourceParent !== targetParent) {
+        // Cross-hierarchy transition detected - skip this edge
+        console.warn(
+          `[Cross-Hierarchy Filter] Skipping transition from '${sourceStateId}' to '${finalTargetId}' - different hierarchy levels (source parent: '${sourceParent || 'root'}', target parent: '${targetParent || 'root'}')`
+        );
+        return null;
+      }
+    }
+
     // Generate unique edge ID - include condition hash for uniqueness
     const conditionHash =
       condition && typeof condition === 'string'
@@ -1366,6 +1365,34 @@ export class SCXMLToXStateConverter {
       edgeType = 'straight';
     }
 
+    // Extract waypoints from viz:waypoints attribute
+    const waypointsAttr = this.getAttribute(transition, 'viz:waypoints');
+    let waypoints: Array<{ x: number; y: number }> | undefined;
+    if (waypointsAttr) {
+      waypoints = waypointsAttr
+        .split(';')
+        .map((point: string) => {
+          const [x, y] = point
+            .split(',')
+            .map((s: string) => parseFloat(s.trim()));
+          return !isNaN(x) && !isNaN(y) ? { x, y } : null;
+        })
+        .filter((wp: any): wp is { x: number; y: number } => wp !== null);
+
+      console.log(
+        `[Waypoints] Extracted from ${sourceStateId}→${target}:`,
+        waypoints
+      );
+    }
+
+    // Extract handle information from viz:sourceHandle and viz:targetHandle attributes
+    const sourceHandleAttr = this.getAttribute(transition, 'viz:sourceHandle');
+    const targetHandleAttr = this.getAttribute(transition, 'viz:targetHandle');
+
+    // Set intelligent defaults: outgoing from bottom, incoming to top
+    const sourceHandle = sourceHandleAttr || 'bottom';
+    const targetHandle = targetHandleAttr || 'top';
+
     // For parallel transitions, use standard handles
     // The visual separation will be handled by edge routing/offset
     const edge: any = {
@@ -1373,13 +1400,16 @@ export class SCXMLToXStateConverter {
       type: edgeType,
       source: sourceStateId,
       target: finalTargetId!,
-      sourceHandle: undefined, // Let ReactFlow decide optimal handle
-      targetHandle: undefined, // Let ReactFlow decide optimal handle
+      sourceHandle: sourceHandle,
+      targetHandle: targetHandle,
       data: {
         event,
         condition,
         conditionParsed,
         actions,
+        waypoints, // Add waypoints to edge data
+        sourceHandle: sourceHandle,
+        targetHandle: targetHandle,
       },
       // Add styling for better visibility
       animated: condition ? false : true, // Animate non-conditional transitions
@@ -1679,15 +1709,22 @@ export class SCXMLToXStateConverter {
       },
     };
 
-    // Add width and height if available from viz:xywh
+    // Apply viz:xywh width/height at all levels for NodeResizer compatibility
     if (
       visualMetadata.width !== undefined &&
       visualMetadata.height !== undefined
     ) {
+      // Top-level dimensions (required by NodeResizer)
+      node.width = visualMetadata.width;
+      node.height = visualMetadata.height;
+
+      // Style-level dimensions
       node.style = {
         width: visualMetadata.width,
         height: visualMetadata.height,
       };
+
+      // Data-level dimensions (for component access)
       node.data.width = visualMetadata.width;
       node.data.height = visualMetadata.height;
     }

@@ -161,7 +161,7 @@ export function getAdditionalClasses(
 
   // Add shadow classes based on state
   if (isActive) {
-    classes.push('shadow-xl', 'ring-4', 'ring-green-200', 'ring-opacity-50');
+    // classes.push('shadow-xl', 'ring-4', 'ring-green-200', 'ring-opacity-50');
   } else if (selected) {
     classes.push('shadow-xl', 'ring-2', 'ring-blue-300');
   } else {

@@ -126,15 +126,6 @@ export class SCXMLParser {
     return this.visualMetadataManager.getVisualMetadata(elementId);
   }
 
-  /**
-   * Update visual metadata for an element
-   */
-  updateVisualMetadata(
-    elementId: string,
-    metadata: Partial<ElementVisualMetadata>
-  ): void {
-    this.visualMetadataManager.updateVisualMetadata(elementId, metadata);
-  }
 
   /**
    * Get all visual metadata
