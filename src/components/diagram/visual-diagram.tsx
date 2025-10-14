@@ -199,15 +199,12 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     editingField: 'event' | 'cond';
   } | null>(null);
 
-  // ELK Layout State
-  const [elkAlgorithm, setElkAlgorithm] = React.useState<
-    'layered' | 'force' | 'mrtree' | 'radial'
-  >('force');
-  const [elkDirection, setElkDirection] = React.useState<
-    'DOWN' | 'UP' | 'RIGHT' | 'LEFT'
-  >('DOWN');
-  const [showLayoutOptions, setShowLayoutOptions] = React.useState(false);
-
+  // State for editing onentry/onexit actions
+  const [selectedStateForActions, setSelectedStateForActions] = React.useState<{
+    id: string;
+    entryActions: Array<{ location: string; expr: string }>;
+    exitActions: Array<{ location: string; expr: string }>;
+  } | null>(null);
   // ==================== REFS ====================
   // Position update management
   const isUpdatingPositionRef = React.useRef(false);
@@ -246,42 +243,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   // Keep refs up to date
   nodesRef.current = nodes;
   onNodesChangeRef.current = onNodesChange;
-
-  // ==================== HELPER FUNCTIONS ====================
-  /**
-   * Parse XML and ensure viz namespace is declared if viz attributes are present
-   */
-  const parseXMLWithVizNamespace = React.useCallback(
-    (xmlContent: string): Document | null => {
-      const parser = new DOMParser();
-
-      // Check if XML contains viz: attributes but lacks namespace declaration
-      const hasVizAttributes = /\s(viz|ns1):[a-zA-Z]/.test(xmlContent);
-      const hasVizNamespace = /xmlns:(viz|ns1)\s*=/.test(xmlContent);
-
-      let processedXML = xmlContent;
-
-      // If viz attributes exist but namespace is not declared, add it
-      if (hasVizAttributes && !hasVizNamespace) {
-        processedXML = xmlContent.replace(
-          /<scxml([^>]*?)>/,
-          `<scxml$1 xmlns:viz="${VISUAL_METADATA_CONSTANTS.NAMESPACE_URI}">`
-        );
-      }
-
-      const doc = parser.parseFromString(processedXML, 'text/xml');
-
-      // Check for parsing errors
-      const parserError = doc.querySelector('parsererror');
-      if (parserError) {
-        console.error('XML parsing error:', parserError.textContent);
-        return null;
-      }
-
-      return doc;
-    },
-    []
-  );
 
   // ==================== NODE CONTENT HANDLERS ====================
   const handleNodeLabelChange = React.useCallback(
@@ -391,8 +352,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         return;
       }
 
-      isUpdatingPositionRef.current = true;
-
       try {
         // Use command pattern for unified SCXML updates
         const {
@@ -405,11 +364,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         if (result.success) {
           previousScxmlRef.current = result.newContent;
           onSCXMLChange(result.newContent, 'position');
-
-          setTimeout(() => {
-            setEdges((edges) => [...edges]);
-            isUpdatingPositionRef.current = false;
-          }, 10);
         } else {
           console.error('Failed to update position:', result.error);
           isUpdatingPositionRef.current = false;
@@ -432,6 +386,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         console.warn('Cannot update dimensions: SCXML content not available');
         return;
       }
+      isUpdatingPositionRef.current = true;
 
       // Use command pattern for unified SCXML updates
       const {
@@ -450,6 +405,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       if (result.success) {
         previousScxmlRef.current = result.newContent;
         onSCXMLChange(result.newContent, 'property');
+
+        setTimeout(() => {
+          setEdges((edges) => [...edges]);
+          isUpdatingPositionRef.current = false;
+        }, 10);
       } else {
         console.error('Failed to resize node:', result.error);
       }
@@ -467,21 +427,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       newLabel: string,
       editingField: 'event' | 'cond' = 'event'
     ) => {
-      console.log('[handleTransitionLabelChange] Called with:', {
-        source,
-        target,
-        originalEvent,
-        originalCond,
-        newLabel,
-        editingField,
-        hasOnSCXMLChange: !!onSCXMLChange,
-        hasScxmlContent: !!scxmlContent,
-      });
-
       if (!onSCXMLChange || !scxmlContent) {
-        console.log(
-          '[handleTransitionLabelChange] Early return - missing dependencies'
-        );
         return;
       }
 
@@ -497,13 +443,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           editingField
         );
 
-        console.log('[handleTransitionLabelChange] Executing command...');
         const result = command.execute(scxmlContent);
 
         if (result.success) {
-          console.log(
-            '[handleTransitionLabelChange] Command succeeded, calling onSCXMLChange'
-          );
           onSCXMLChange(result.newContent, 'property');
         } else {
           console.error('Failed to update transition:', result.error);
@@ -691,19 +633,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         return;
       }
 
-      console.log('[Edge Reconnect] Reconnecting edge:', {
-        oldSource: oldEdge.source,
-        oldTarget: oldEdge.target,
-        newSource: newConnection.source,
-        newTarget: newConnection.target,
-        oldSourceHandle: oldEdge.sourceHandle,
-        oldTargetHandle: oldEdge.targetHandle,
-        newSourceHandle: newConnection.sourceHandle,
-        newTargetHandle: newConnection.targetHandle,
-        event: oldEdge.data?.event,
-        condition: oldEdge.data?.condition,
-      });
-
       try {
         // Use command pattern for unified SCXML updates
         const { ReconnectTransitionCommand } = require('@/lib/commands');
@@ -723,7 +652,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         const result = command.execute(scxmlContent);
 
         if (result.success) {
-          console.log('[Edge Reconnect] Reconnection successful');
           onSCXMLChange(result.newContent, 'structure');
         } else {
           console.error('Failed to reconnect transition:', result.error);
@@ -736,18 +664,68 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   );
 
   // ==================== STATE CLICK HANDLERS ====================
-  const handleStateClick = useCallback((stateId: string) => {
-    setSelectedTransitions(new Set());
-    setActiveStates((prev) => {
-      const newStates = new Set(prev);
-      if (newStates.has(stateId)) {
-        newStates.delete(stateId);
-      } else {
-        newStates.add(stateId);
-      }
-      return newStates;
-    });
-  }, []);
+  const handleStateClick = useCallback(
+    (stateId: string, event?: React.MouseEvent) => {
+      // Check if the click is on the editable label - if so, don't open actions editor
+      // This allows double-click on label to work properly
+      const isLabelClick = event?.target &&
+        (event.target as HTMLElement).closest('[data-label-editable="true"]');
+
+      setSelectedTransitions(new Set());
+      setSelectedEdgeForEdit(null);
+
+      setActiveStates((prev) => {
+        const newStates = new Set(prev);
+
+        // If Ctrl (or Cmd on Mac) is pressed, allow multi-select
+        const isMultiSelect = event?.ctrlKey || event?.metaKey;
+
+        if (isMultiSelect) {
+          // Toggle selection when Ctrl is held
+          if (newStates.has(stateId)) {
+            newStates.delete(stateId);
+            setSelectedStateForActions(null);
+          } else {
+            newStates.add(stateId);
+          }
+        } else {
+          // Single selection mode - clear all and select only this state
+          if (newStates.has(stateId)) {
+            newStates.clear();
+            setSelectedStateForActions(null);
+          } else {
+            newStates.clear();
+            newStates.add(stateId);
+
+            // Show actions editor for single selected state
+            // BUT NOT if clicking on the label (to allow double-click editing)
+            if (!isLabelClick) {
+              const node = nodes.find((n) => n.id === stateId);
+              if (node && node.data) {
+                const parseActions = (actions: string[]) => {
+                  return actions
+                    .filter((a) => a.startsWith('assign|'))
+                    .map((a) => {
+                      const parts = a.split('|');
+                      return { location: parts[1] || '', expr: parts[2] || '' };
+                    });
+                };
+
+                setSelectedStateForActions({
+                  id: stateId,
+                  entryActions: parseActions(node.data.entryActions || []),
+                  exitActions: parseActions(node.data.exitActions || []),
+                });
+              }
+            }
+          }
+        }
+
+        return newStates;
+      });
+    },
+    [nodes]
+  );
 
   // ==================== REACTFLOW NODE CHANGE HANDLER ====================
   const handleNodesChange = useCallback(
@@ -936,10 +914,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     (edgeId: string, index: number) => {
       if (!onSCXMLChange || !scxmlContent) return;
 
-      console.log(
-        `[Waypoint] Drag ended for waypoint ${index} of edge ${edgeId}`
-      );
-
       try {
         // Get the edge with updated waypoints from parsedData ref (to access current state)
         const edge = parsedDataRef.current.edges.find((e) => e.id === edgeId);
@@ -1012,10 +986,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
         if (result.success) {
           onSCXMLChange(result.newContent, 'position');
-          console.log(
-            `[Waypoint] Added waypoint at index ${insertIndex} to edge ${edgeId}:`,
-            { x, y }
-          );
         } else {
           console.error('Failed to add waypoint:', result.error);
         }
@@ -1081,9 +1051,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
         if (result.success) {
           onSCXMLChange(result.newContent, 'position');
-          console.log(
-            `[Waypoint] Deleted waypoint ${index} from edge ${edgeId}`
-          );
         } else {
           console.error('Failed to delete waypoint:', result.error);
         }
@@ -1109,10 +1076,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       );
 
       if (matchingEdge) {
-        console.log(
-          '[Reselection] Found matching edge after reparse:',
-          matchingEdge.id
-        );
         setSelectedTransitions(new Set([matchingEdge.id]));
         edgeIdentityForReselection.current = null; // Clear after reselection
       }
@@ -1751,96 +1714,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     fitView,
   ]);
 
-  // ==================== ELK LAYOUT HANDLER ====================
-  const handleApplyELKLayout = React.useCallback(async () => {
-    if (!parserRef.current || !onSCXMLChange || !scxmlContent) {
-      console.error('Cannot apply ELK layout: parser or SCXML not available');
-      return;
-    }
-
-    try {
-      const converter = new SCXMLToXStateConverter();
-      const parseResult = parserRef.current.parse(scxmlContent);
-
-      if (!parseResult.success || !parseResult.data) {
-        console.error('Failed to parse SCXML for ELK layout');
-        return;
-      }
-
-      // Get current nodes and edges
-      const currentNodes = [...nodes];
-      const currentEdges = [...edges];
-
-      // Apply ELK layout with selected algorithm and direction
-      const layoutedNodes = await converter.applyELKLayout(
-        currentNodes,
-        currentEdges,
-        {
-          algorithm: elkAlgorithm,
-          direction: elkDirection,
-          edgeRouting: 'ORTHOGONAL',
-          hierarchical: true,
-          spacing: {
-            nodeNode: 80,
-            edgeNode: 40,
-            edgeEdge: 20,
-          },
-        }
-      );
-
-      // Update SCXML with new positions
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(scxmlContent, 'text/xml');
-      const rootElement = doc.documentElement;
-
-      // Ensure viz namespace is set
-      if (!rootElement.hasAttribute('xmlns:viz')) {
-        rootElement.setAttribute(
-          'xmlns:viz',
-          VISUAL_METADATA_CONSTANTS.NAMESPACE_URI
-        );
-      }
-
-      // Update positions in SCXML
-      layoutedNodes.forEach((node) => {
-        const element = doc.querySelector(`[id="${node.id}"]`);
-        if (element) {
-          const width = node.style?.width || 160;
-          const height = node.style?.height || 80;
-          const newVizValue = `${Math.round(node.position.x)},${Math.round(
-            node.position.y
-          )},${width},${height}`;
-          element.setAttribute('viz:xywh', newVizValue);
-        }
-      });
-
-      const serializer = new XMLSerializer();
-      const updatedSCXML = serializer.serializeToString(doc);
-      onSCXMLChange(updatedSCXML, 'position');
-
-      // Fit view after layout
-      setTimeout(() => {
-        fitView({
-          padding: 0.3,
-          includeHiddenNodes: false,
-          minZoom: 0.5,
-          maxZoom: 2,
-          duration: 800,
-        });
-      }, 100);
-    } catch (error) {
-      console.error('Failed to apply ELK layout:', error);
-    }
-  }, [
-    scxmlContent,
-    onSCXMLChange,
-    nodes,
-    edges,
-    fitView,
-    elkAlgorithm,
-    elkDirection,
-  ]);
-
   // ==================== NODE ENHANCEMENTS ====================
   const nodeEnhancements = React.useMemo(() => {
     const enhancements = new Map();
@@ -1906,14 +1779,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
         // Determine selection color based on edge type
         const selectionColor = edge.data?.condition ? '#ef4444' : '#3b82f6';
-
-        // Debug logging for selected edges with waypoints
-        if (edge.data?.waypoints && edge.data.waypoints.length > 0) {
-          console.log(
-            `[Selection] Edge ${edge.id} selected with ${edge.data.waypoints.length} waypoints, type=${edge.type}`
-          );
-        }
-
         return {
           ...edge,
           selected: true, // CRITICAL: This prop enables waypoint handles to show
@@ -1942,23 +1807,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       };
     };
 
-    if (transitionDisplayMode === 'all') {
-      return hierarchyFilteredEdges.map((edge) => applySelectionStyles(edge));
-    }
-
-    if (activeStates.size === 0) {
-      return hierarchyFilteredEdges.map((edge) => applySelectionStyles(edge));
-    }
-
-    const fromActiveStates = hierarchyFilteredEdges.filter((edge) =>
-      activeStates.has(edge.source)
-    );
-
-    if (transitionDisplayMode === 'active') {
-      return fromActiveStates.map((edge) => applySelectionStyles(edge));
-    }
-
-    return fromActiveStates
+    return hierarchyFilteredEdges
       .filter((edge) => true)
       .map((edge) => applySelectionStyles(edge));
   }, [
@@ -2071,14 +1920,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     }
   }, [currentParentId, fitView, filteredNodes.length]);
 
-  // Set initial state - disabled to avoid auto-selecting states
-  // React.useEffect(() => {
-  //   const initialState = filteredNodes.find((node) => node.data?.isInitial);
-  //   if (initialState && activeStates.size === 0) {
-  //     setActiveStates(new Set([initialState.id]));
-  //   }
-  // }, [filteredNodes, activeStates.size]);
-
   // Handle keyboard events for edge deletion
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2109,25 +1950,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       }
     };
   }, []);
-
-  // Close layout options on click outside
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showLayoutOptions) {
-        const target = event.target as HTMLElement;
-        if (!target.closest('.layout-options-panel')) {
-          setShowLayoutOptions(false);
-        }
-      }
-    };
-
-    if (showLayoutOptions) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () =>
-        document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showLayoutOptions]);
-
   // ==================== RENDER ====================
   return (
     <div className='h-full w-full bg-gray-50 flex flex-col relative'>
@@ -2153,87 +1975,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
       {/* Hierarchy Navigation Controls */}
       <div className='flex items-center gap-2 px-4 py-2 bg-white border-b shadow-sm'>
-        {canNavigateUp && (
-          <button
-            onClick={navigateUp}
-            className='p-2 hover:bg-gray-100 rounded-lg transition-colors'
-            title='Navigate up one level'
-          >
-            <ArrowUp className='h-4 w-4 text-gray-700' />
-          </button>
-        )}
-
-        <button
-          onClick={navigateToRoot}
-          className='p-2 hover:bg-gray-100 rounded-lg transition-colors'
-          title='Navigate to root'
-          disabled={!canNavigateUp}
-        >
-          <Home className='h-4 w-4 text-gray-700' />
-        </button>
-
-        <div className='h-6 w-px bg-gray-300 mx-1' />
-
-        {/* ELK Layout Controls */}
-        <div className='relative layout-options-panel'>
-          <button
-            onClick={() => setShowLayoutOptions(!showLayoutOptions)}
-            className='p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1'
-            title='Layout Options'
-          >
-            <Network className='h-4 w-4 text-gray-700' />
-          </button>
-
-          {showLayoutOptions && (
-            <div className='absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-50 min-w-[250px]'>
-              <div className='text-xs font-semibold text-gray-700 mb-2'>
-                Layout Algorithm
-              </div>
-              <select
-                value={elkAlgorithm}
-                onChange={(e) => setElkAlgorithm(e.target.value as any)}
-                className='w-full px-2 py-1.5 text-sm border text-gray-800 border-gray-300 rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500'
-              >
-                <option value='layered'>Layered (Hierarchical)</option>
-                <option value='force'>Force-Directed</option>
-                <option value='mrtree'>Tree</option>
-                <option value='radial'>Radial</option>
-              </select>
-
-              {/* Only show direction for algorithms that support it */}
-              {(elkAlgorithm === 'layered' || elkAlgorithm === 'mrtree') && (
-                <>
-                  <div className='text-xs font-semibold text-gray-700 mb-2'>
-                    Direction
-                  </div>
-                  <select
-                    value={elkDirection}
-                    onChange={(e) => setElkDirection(e.target.value as any)}
-                    className='w-full px-2 py-1.5 text-sm border text-gray-800 border-gray-300 rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                  >
-                    <option value='DOWN'>Top to Bottom</option>
-                    <option value='UP'>Bottom to Top</option>
-                    <option value='RIGHT'>Left to Right</option>
-                    <option value='LEFT'>Right to Left</option>
-                  </select>
-                </>
-              )}
-
-              <button
-                onClick={() => {
-                  handleApplyELKLayout();
-                  setShowLayoutOptions(false);
-                }}
-                className='w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors'
-              >
-                Apply Layout
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className='h-6 w-px bg-gray-300 mx-1' />
-
         <div className='flex items-center gap-1 flex-1'>
           {breadcrumbPath.map((path, index) => (
             <React.Fragment key={index}>
@@ -2278,12 +2019,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               });
             }}
             onBlur={() => {
-              console.log('[TransitionEdit] onBlur triggered', {
-                rawValue: selectedEdgeForEdit.rawValue,
-                source: selectedEdgeForEdit.source,
-                target: selectedEdgeForEdit.target,
-                editingField: selectedEdgeForEdit.editingField,
-              });
               const newLabel = selectedEdgeForEdit.rawValue || '';
               if (newLabel) {
                 handleTransitionLabelChange(
@@ -2299,16 +2034,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               }
             }}
             onKeyDown={(e) => {
-              console.log('[TransitionEdit] onKeyDown triggered', {
-                key: e.key,
-              });
               if (e.key === 'Enter') {
-                console.log('[TransitionEdit] Enter pressed', {
-                  rawValue: selectedEdgeForEdit.rawValue,
-                  source: selectedEdgeForEdit.source,
-                  target: selectedEdgeForEdit.target,
-                  editingField: selectedEdgeForEdit.editingField,
-                });
                 const newLabel = selectedEdgeForEdit.rawValue || '';
                 if (newLabel) {
                   handleTransitionLabelChange(
@@ -2349,6 +2075,132 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         </div>
       )}
 
+      {/* State Actions Editor (onentry/onexit with assign) */}
+      {selectedStateForActions && (
+        <div className='flex items-center gap-3 px-4 py-2 bg-green-50 border-b'>
+          <span className='text-xs font-medium text-gray-700'>
+            Edit onentry for {selectedStateForActions.id}:
+          </span>
+
+          {selectedStateForActions.entryActions.length === 0 ? (
+            <button
+              onClick={() => {
+                setSelectedStateForActions({
+                  ...selectedStateForActions,
+                  entryActions: [{ location: '', expr: '' }],
+                });
+              }}
+              className='text-xs text-green-600 hover:text-green-800 font-medium px-2 py-1 border border-green-300 rounded hover:bg-green-100'
+            >
+              + Add Assign
+            </button>
+          ) : (
+            <>
+              <input
+                type='text'
+                value={selectedStateForActions.entryActions[0].location}
+                onChange={(e) => {
+                  const updated = [...selectedStateForActions.entryActions];
+                  updated[0].location = e.target.value;
+                  setSelectedStateForActions({
+                    ...selectedStateForActions,
+                    entryActions: updated,
+                  });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const entryActions = selectedStateForActions.entryActions
+                      .filter((a) => a.location || a.expr)
+                      .map((a) => `assign|${a.location}|${a.expr}`);
+                    const exitActions = selectedStateForActions.exitActions
+                      .filter((a) => a.location || a.expr)
+                      .map((a) => `assign|${a.location}|${a.expr}`);
+                    handleNodeActionsChange(
+                      selectedStateForActions.id,
+                      entryActions,
+                      exitActions
+                    );
+                    setSelectedStateForActions(null);
+                    setActiveStates(new Set());
+                  } else if (e.key === 'Escape') {
+                    setSelectedStateForActions(null);
+                    setActiveStates(new Set());
+                  }
+                }}
+                className='w-32 px-2 py-1 text-xs border text-gray-800 border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500'
+                placeholder='location'
+              />
+              <input
+                type='text'
+                value={selectedStateForActions.entryActions[0].expr}
+                onChange={(e) => {
+                  const updated = [...selectedStateForActions.entryActions];
+                  updated[0].expr = e.target.value;
+                  setSelectedStateForActions({
+                    ...selectedStateForActions,
+                    entryActions: updated,
+                  });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const entryActions = selectedStateForActions.entryActions
+                      .filter((a) => a.location || a.expr)
+                      .map((a) => `assign|${a.location}|${a.expr}`);
+                    const exitActions = selectedStateForActions.exitActions
+                      .filter((a) => a.location || a.expr)
+                      .map((a) => `assign|${a.location}|${a.expr}`);
+                    handleNodeActionsChange(
+                      selectedStateForActions.id,
+                      entryActions,
+                      exitActions
+                    );
+                    setSelectedStateForActions(null);
+                    setActiveStates(new Set());
+                  } else if (e.key === 'Escape') {
+                    setSelectedStateForActions(null);
+                    setActiveStates(new Set());
+                  }
+                }}
+                className='flex-1 px-2 py-1 text-xs border text-gray-800 border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500'
+                placeholder='expr'
+              />
+              <button
+                onClick={() => {
+                  // Convert back to action format and save
+                  const entryActions = selectedStateForActions.entryActions
+                    .filter((a) => a.location || a.expr)
+                    .map((a) => `assign|${a.location}|${a.expr}`);
+                  const exitActions = selectedStateForActions.exitActions
+                    .filter((a) => a.location || a.expr)
+                    .map((a) => `assign|${a.location}|${a.expr}`);
+
+                  handleNodeActionsChange(
+                    selectedStateForActions.id,
+                    entryActions,
+                    exitActions
+                  );
+                  setSelectedStateForActions(null);
+                  setActiveStates(new Set());
+                }}
+                className='px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700'
+              >
+                Save
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={() => {
+              setSelectedStateForActions(null);
+              setActiveStates(new Set());
+            }}
+            className='text-xs text-gray-600 hover:text-gray-900 ml-auto'
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       <div className='flex-1'>
         <ReactFlow
           nodes={nodes}
@@ -2357,13 +2209,15 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onReconnect={onReconnect}
-          onNodeClick={(event, node) => handleStateClick(node.id)}
+          onNodeClick={(event, node) => handleStateClick(node.id, event)}
           onEdgeClick={handleEdgeClick}
           onEdgeMouseEnter={handleEdgeMouseEnter}
           onEdgeMouseLeave={handleEdgeMouseLeave}
           onPaneClick={() => {
             setSelectedEdgeForEdit(null);
             setSelectedTransitions(new Set());
+            setSelectedStateForActions(null);
+            setActiveStates(new Set());
           }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -2443,15 +2297,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               className='text-gray-600 hover:text-gray-900'
             >
               S
-            </ControlButton>
-            <ControlButton
-              onClick={navigateUp}
-              title='One Level Up'
-              aria-label='One Level Up'
-              className='text-gray-600 hover:text-gray-900'
-              disabled={!canNavigateUp}
-            >
-              <ArrowUp />
             </ControlButton>
           </Controls>
           <MiniMap

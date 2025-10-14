@@ -1471,7 +1471,9 @@ export class SCXMLToXStateConverter {
       for (const assign of assignsArray) {
         const location = this.getAttribute(assign, 'location') || '';
         const expr = this.getAttribute(assign, 'expr') || '';
-        actions.push('assign');
+        // Store assign with location and expr in format: assign|location|expr
+        // This preserves the data for editing while remaining backward compatible
+        actions.push(`assign|${location}|${expr}`);
       }
     }
 

@@ -8,6 +8,7 @@ import {
   type NodeProps,
   useStore,
   NodeResizer,
+  useReactFlow,
 } from 'reactflow';
 import {
   Circle,
@@ -67,6 +68,9 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     const hasConnections = useMemo(() => {
       return edges.some((edge) => edge.source === id || edge.target === id);
     }, [edges, id]);
+
+    // Access React Flow methods to update node data during resize
+    const { setNodes } = useReactFlow();
 
     const {
       label,
@@ -309,6 +313,36 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
         {/* Node Resizer - only shows when node is selected */}
         {selected && onResize && (
           <NodeResizer
+            onResize={(event, params) => {
+              // Update node dimensions AND position in real-time during resize
+              // This ensures handles update their positions immediately
+              setNodes((nds) =>
+                nds.map((node) => {
+                  if (node.id === id) {
+                    return {
+                      ...node,
+                      position: {
+                        x: params.x,
+                        y: params.y,
+                      },
+                      width: params.width,
+                      height: params.height,
+                      style: {
+                        ...node.style,
+                        width: params.width,
+                        height: params.height,
+                      },
+                      data: {
+                        ...node.data,
+                        width: params.width,
+                        height: params.height,
+                      },
+                    };
+                  }
+                  return node;
+                })
+              );
+            }}
             onResizeEnd={(event, params) => {
               onResize(params.x, params.y, params.width, params.height);
             }}
@@ -492,6 +526,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                   />
                 ) : (
                   <span
+                    data-label-editable='true'
                     className='font-bold text-gray-800 text-lg cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors'
                     onDoubleClick={handleLabelDoubleClick}
                     title='Double-click to edit state name'
@@ -582,26 +617,6 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                     )}
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* State type indicator for compound/parallel states */}
-            {(stateType === 'compound' || stateType === 'parallel') && (
-              <div className='mt-3 pt-3 border-t border-gray-200/50'>
-                <div className='flex items-center space-x-2'>
-                  <span
-                    className={`text-xs uppercase tracking-wide font-medium px-2 py-1 rounded-full ${
-                      stateType === 'compound'
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-orange-100 text-orange-700'
-                    }`}
-                  >
-                    {stateType}
-                  </span>
-                  {stateType === 'parallel' && (
-                    <span className='text-xs text-gray-500'>⚡ Concurrent</span>
-                  )}
-                </div>
               </div>
             )}
 

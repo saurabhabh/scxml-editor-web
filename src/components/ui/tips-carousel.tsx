@@ -65,10 +65,10 @@ export const TipsCarousel: React.FC<TipsCarouselProps> = ({
         {/* Tip Content */}
         <div className='min-h-[100px]'>
           <h4 className='text-base font-medium text-gray-900 mb-2'>
-            {currentTip.title}
+            {currentTip?.title}
           </h4>
           <p className='text-sm text-gray-600 leading-relaxed'>
-            {currentTip.description}
+            {currentTip?.description}
           </p>
         </div>
 

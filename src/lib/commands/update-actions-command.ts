@@ -39,20 +39,14 @@ export class UpdateActionsCommand extends BaseCommand {
     // Store old actions for undo
     const existingOnentry = stateElement.querySelector('onentry');
     if (existingOnentry) {
-      const executables = existingOnentry.querySelectorAll('executable');
-      this.oldEntryActions = Array.from(executables).map(
-        (exec) => exec.getAttribute('expr') || ''
-      );
+      this.oldEntryActions = this.extractActionsFromElement(existingOnentry);
     } else {
       this.oldEntryActions = [];
     }
 
     const existingOnexit = stateElement.querySelector('onexit');
     if (existingOnexit) {
-      const executables = existingOnexit.querySelectorAll('executable');
-      this.oldExitActions = Array.from(executables).map(
-        (exec) => exec.getAttribute('expr') || ''
-      );
+      this.oldExitActions = this.extractActionsFromElement(existingOnexit);
     } else {
       this.oldExitActions = [];
     }
@@ -63,12 +57,33 @@ export class UpdateActionsCommand extends BaseCommand {
     }
 
     if (this.entryActions.length > 0) {
-      const onentry = doc.createElement('onentry');
+      // Get the namespace from the root element
+      const scxmlNamespace = doc.documentElement.namespaceURI || 'http://www.w3.org/2005/07/scxml';
+      const onentry = doc.createElementNS(scxmlNamespace, 'onentry');
+
       this.entryActions.forEach((action) => {
-        const executable = doc.createElement('executable');
-        executable.setAttribute('label', 'Action');
-        executable.setAttribute('expr', action);
-        onentry.appendChild(executable);
+        // Parse action format: "assign|location|expr" or simple string
+        if (action.startsWith('assign|')) {
+          const parts = action.split('|');
+          const location = parts[1] || '';
+          const expr = parts[2] || '';
+          const assignElement = doc.createElementNS(scxmlNamespace, 'assign');
+          if (location) assignElement.setAttribute('location', location);
+          if (expr) assignElement.setAttribute('expr', expr);
+          onentry.appendChild(assignElement);
+        } else if (action.startsWith('log')) {
+          // Handle log actions
+          const logElement = doc.createElementNS(scxmlNamespace, 'log');
+          logElement.setAttribute('label', 'Action');
+          logElement.setAttribute('expr', action);
+          onentry.appendChild(logElement);
+        } else {
+          // Fallback for legacy format
+          const executable = doc.createElementNS(scxmlNamespace, 'executable');
+          executable.setAttribute('label', 'Action');
+          executable.setAttribute('expr', action);
+          onentry.appendChild(executable);
+        }
       });
       stateElement.appendChild(onentry);
     }
@@ -79,12 +94,33 @@ export class UpdateActionsCommand extends BaseCommand {
     }
 
     if (this.exitActions.length > 0) {
-      const onexit = doc.createElement('onexit');
+      // Get the namespace from the root element
+      const scxmlNamespace = doc.documentElement.namespaceURI || 'http://www.w3.org/2005/07/scxml';
+      const onexit = doc.createElementNS(scxmlNamespace, 'onexit');
+
       this.exitActions.forEach((action) => {
-        const executable = doc.createElement('executable');
-        executable.setAttribute('label', 'Action');
-        executable.setAttribute('expr', action);
-        onexit.appendChild(executable);
+        // Parse action format: "assign|location|expr" or simple string
+        if (action.startsWith('assign|')) {
+          const parts = action.split('|');
+          const location = parts[1] || '';
+          const expr = parts[2] || '';
+          const assignElement = doc.createElementNS(scxmlNamespace, 'assign');
+          if (location) assignElement.setAttribute('location', location);
+          if (expr) assignElement.setAttribute('expr', expr);
+          onexit.appendChild(assignElement);
+        } else if (action.startsWith('log')) {
+          // Handle log actions
+          const logElement = doc.createElementNS(scxmlNamespace, 'log');
+          logElement.setAttribute('label', 'Action');
+          logElement.setAttribute('expr', action);
+          onexit.appendChild(logElement);
+        } else {
+          // Fallback for legacy format
+          const executable = doc.createElementNS(scxmlNamespace, 'executable');
+          executable.setAttribute('label', 'Action');
+          executable.setAttribute('expr', action);
+          onexit.appendChild(executable);
+        }
       });
       stateElement.appendChild(onexit);
     }
@@ -119,5 +155,33 @@ export class UpdateActionsCommand extends BaseCommand {
     if (entryCount > 0) parts.push(`${entryCount} entry action${entryCount > 1 ? 's' : ''}`);
     if (exitCount > 0) parts.push(`${exitCount} exit action${exitCount > 1 ? 's' : ''}`);
     return `Update actions: ${parts.join(', ') || 'no actions'}`;
+  }
+
+  /**
+   * Extract actions from onentry/onexit element, preserving format
+   */
+  private extractActionsFromElement(element: Element): string[] {
+    const actions: string[] = [];
+    const children = Array.from(element.children);
+
+    for (const child of children) {
+      const tagName = child.tagName.toLowerCase();
+
+      if (tagName === 'assign') {
+        const location = child.getAttribute('location') || '';
+        const expr = child.getAttribute('expr') || '';
+        actions.push(`assign|${location}|${expr}`);
+      } else if (tagName === 'log') {
+        const label = child.getAttribute('label') || '';
+        const expr = child.getAttribute('expr') || '';
+        actions.push(`log|${label}|${expr}`);
+      } else if (tagName === 'executable') {
+        // Legacy format
+        const expr = child.getAttribute('expr') || '';
+        actions.push(expr);
+      }
+    }
+
+    return actions;
   }
 }

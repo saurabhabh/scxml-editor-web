@@ -45,7 +45,9 @@ export const InlineTipsCarousel: React.FC<InlineTipsCarouselProps> = ({
   }, [autoAdvance, autoAdvanceInterval, filteredTips.length]);
 
   const goToPrevious = () => {
-    setCurrentIndex((prev) => (prev - 1 + filteredTips.length) % filteredTips.length);
+    setCurrentIndex(
+      (prev) => (prev - 1 + filteredTips.length) % filteredTips.length
+    );
   };
 
   const goToNext = () => {
@@ -72,20 +74,15 @@ export const InlineTipsCarousel: React.FC<InlineTipsCarouselProps> = ({
       {/* Tip Content */}
       <div className='flex items-center space-x-1 min-w-0'>
         <span className='font-medium'>💡 Tip:</span>
-        <span className='truncate'>{currentTip.content}</span>
+        <span className='truncate'>{currentTip?.content}</span>
       </div>
 
       {/* Indicators (dots) */}
       {filteredTips.length > 1 && (
         <div className='flex gap-1'>
-          {filteredTips.map((_, index) => (
-            <div
-              key={index}
-              className={`h-1 rounded-full transition-all ${
-                index === currentIndex ? 'w-3 bg-blue-500' : 'w-1 bg-gray-300'
-              }`}
-            />
-          ))}
+          <div className='text-blue-500'>
+            {currentIndex + 1} of {filteredTips.length}{' '}
+          </div>
         </div>
       )}
 
