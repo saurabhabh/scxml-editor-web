@@ -406,9 +406,12 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         previousScxmlRef.current = result.newContent;
         onSCXMLChange(result.newContent, 'resize');
 
+        // Ensure final edge recalculation after resize completes
         setTimeout(() => {
+          setNodes((node) => [...enhancedNodes]);
+          setEdges((edges) => [...edges]);
           isUpdatingPositionRef.current = false;
-        }, 10);
+        }, 50);
       } else {
         console.error('Failed to resize node:', result.error);
         isUpdatingPositionRef.current = false;
