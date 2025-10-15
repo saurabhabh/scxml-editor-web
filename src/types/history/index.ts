@@ -3,6 +3,7 @@ export type ActionType =
   | 'node-add'
   | 'node-delete'
   | 'node-move'
+  | 'node-resize'
   | 'node-update'
   | 'edge-add'
   | 'edge-delete'

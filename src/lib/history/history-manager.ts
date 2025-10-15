@@ -5,11 +5,14 @@ export class HistoryManager {
   private static instance: HistoryManager;
   private debounceTimer: NodeJS.Timeout | null = null;
   private nodePositionDebounceTimer: NodeJS.Timeout | null = null;
+  private nodeResizeDebounceTimer: NodeJS.Timeout | null = null;
   private lastContent: string = '';
   private pendingTextChanges: string[] = [];
   private textEditStartTime: number = 0;
   private nodePositionStartTime: number = 0;
+  private nodeResizeStartTime: number = 0;
   private pendingNodeMove: { content: string; nodeId?: string } | null = null;
+  private pendingNodeResize: { content: string; nodeId?: string } | null = null;
 
   private constructor() {}
 
@@ -111,6 +114,13 @@ export class HistoryManager {
       this.pendingNodeMove = null;
     }
 
+    // Cancel any pending node resizes
+    if (this.nodeResizeDebounceTimer) {
+      clearTimeout(this.nodeResizeDebounceTimer);
+      this.nodeResizeDebounceTimer = null;
+      this.pendingNodeResize = null;
+    }
+
     const store = useHistoryStore.getState();
     store.pushEntry({
       actionType,
@@ -128,11 +138,17 @@ export class HistoryManager {
   trackDiagramChange(
     content: string,
     metadata?: HistoryMetadata,
-    hint?: 'position' | 'structure' | 'property'
+    hint?: 'position' | 'structure' | 'property' | 'resize'
   ) {
     // If hint suggests this is a position change, use debouncing
     if (hint === 'position') {
       this.trackNodeMove('unknown', content, metadata);
+      return;
+    }
+
+    // If hint suggests this is a resize change, use debouncing with node-resize action type
+    if (hint === 'resize') {
+      this.trackNodeResize('unknown', content, metadata);
       return;
     }
 
@@ -206,6 +222,44 @@ export class HistoryManager {
   }
 
   /**
+   * Track node resize with debouncing
+   */
+  trackNodeResize(nodeId: string, content: string, metadata?: HistoryMetadata, debounceMs: number = 300) {
+    const store = useHistoryStore.getState();
+
+    // If this is the first resize in a series, record the start time
+    if (!this.nodeResizeDebounceTimer) {
+      this.nodeResizeStartTime = Date.now();
+    }
+
+    // Clear existing timer
+    if (this.nodeResizeDebounceTimer) {
+      clearTimeout(this.nodeResizeDebounceTimer);
+    }
+
+    // Store pending resize
+    this.pendingNodeResize = { content, nodeId };
+
+    // Set new timer
+    this.nodeResizeDebounceTimer = setTimeout(() => {
+      if (this.pendingNodeResize) {
+        store.pushEntry({
+          actionType: 'node-resize',
+          description: `Resize node ${nodeId}`,
+          content: this.pendingNodeResize.content,
+          metadata,
+        });
+
+        this.lastContent = this.pendingNodeResize.content;
+        this.pendingNodeResize = null;
+      }
+
+      this.nodeResizeDebounceTimer = null;
+      this.nodeResizeStartTime = 0;
+    }, debounceMs);
+  }
+
+  /**
    * Track an edge operation
    */
   trackEdgeOperation(
@@ -221,30 +275,30 @@ export class HistoryManager {
   }
 
   /**
-   * Perform undo and return the content to restore
+   * Perform undo and return the content to restore along with action type
    */
-  undo(): string | null {
+  undo(): { content: string; actionType: ActionType } | null {
     const store = useHistoryStore.getState();
     const entry = store.undo();
 
     if (entry) {
       this.lastContent = entry.content;
-      return entry.content;
+      return { content: entry.content, actionType: entry.actionType };
     }
 
     return null;
   }
 
   /**
-   * Perform redo and return the content to restore
+   * Perform redo and return the content to restore along with action type
    */
-  redo(): string | null {
+  redo(): { content: string; actionType: ActionType } | null {
     const store = useHistoryStore.getState();
     const entry = store.redo();
 
     if (entry) {
       this.lastContent = entry.content;
-      return entry.content;
+      return { content: entry.content, actionType: entry.actionType };
     }
 
     return null;
@@ -286,8 +340,14 @@ export class HistoryManager {
       this.nodePositionDebounceTimer = null;
     }
 
+    if (this.nodeResizeDebounceTimer) {
+      clearTimeout(this.nodeResizeDebounceTimer);
+      this.nodeResizeDebounceTimer = null;
+    }
+
     this.pendingTextChanges = [];
     this.pendingNodeMove = null;
+    this.pendingNodeResize = null;
     this.lastContent = '';
     useHistoryStore.getState().clear();
   }

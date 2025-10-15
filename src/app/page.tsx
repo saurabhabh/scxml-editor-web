@@ -17,6 +17,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { HistoryManager } from '@/lib/history/history-manager';
 import type { FileInfo, ValidationError } from '@/types/common';
+import type { ActionType } from '@/types/history';
 import { DEFAULT_SCXML_TEMPLATE } from '@/lib/consts/default_scxml_template';
 
 export default function Home() {
@@ -39,6 +40,7 @@ export default function Home() {
   const editorRef = useRef<XMLEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUpdatingFromHistory, setIsUpdatingFromHistory] = React.useState(false);
+  const [currentHistoryActionType, setCurrentHistoryActionType] = React.useState<ActionType | undefined>(undefined);
 
   const validateContent = useCallback(
     (xmlContent: string) => {
@@ -115,7 +117,7 @@ export default function Home() {
   );
 
   const handleSCXMLChangeFromDiagram = useCallback(
-    (newContent: string, changeType?: 'position' | 'structure' | 'property') => {
+    (newContent: string, changeType?: 'position' | 'structure' | 'property' | 'resize') => {
       // Update content from visual diagram changes
       setContent(newContent);
 
@@ -152,22 +154,28 @@ export default function Home() {
 
   // Undo/Redo handlers
   const handleUndo = useCallback(
-    (restoredContent: string) => {
+    (restoredContent: string, actionType: ActionType) => {
       setIsUpdatingFromHistory(true);
+      setCurrentHistoryActionType(actionType);
       setContent(restoredContent);
+
       setTimeout(() => {
         setIsUpdatingFromHistory(false);
+        setCurrentHistoryActionType(undefined);
       }, 100);
     },
     [setContent]
   );
 
   const handleRedo = useCallback(
-    (restoredContent: string) => {
+    (restoredContent: string, actionType: ActionType) => {
       setIsUpdatingFromHistory(true);
+      setCurrentHistoryActionType(actionType);
       setContent(restoredContent);
+
       setTimeout(() => {
         setIsUpdatingFromHistory(false);
+        setCurrentHistoryActionType(undefined);
       }, 100);
     },
     [setContent]
@@ -290,6 +298,7 @@ export default function Home() {
         }}
         onSCXMLChange={handleSCXMLChangeFromDiagram}
         isUpdatingFromHistory={isUpdatingFromHistory}
+        historyActionType={currentHistoryActionType}
       />
     </div>
   );

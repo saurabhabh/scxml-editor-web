@@ -48,6 +48,7 @@ import { SimulationControls } from '../simulation';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { HistoryWrapperNode } from './nodes/history-wrapper-node';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
+import { ActionType } from '@/types/history';
 
 // ==================== TYPES & INTERFACES ====================
 interface VisualDiagramProps {
@@ -56,9 +57,10 @@ interface VisualDiagramProps {
   onEdgeChange?: (edges: Edge[]) => void;
   onSCXMLChange?: (
     scxmlContent: string,
-    changeType?: 'position' | 'structure' | 'property'
+    changeType?: 'position' | 'structure' | 'property' | 'resize'
   ) => void;
   isUpdatingFromHistory?: boolean;
+  historyActionType?: ActionType;
 }
 
 // ==================== CONSTANTS ====================
@@ -144,6 +146,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   onEdgeChange,
   onSCXMLChange,
   isUpdatingFromHistory = false,
+  historyActionType,
 }) => {
   // ==================== STATE MANAGEMENT ====================
   const { fitView, screenToFlowPosition } = useReactFlow();
@@ -151,11 +154,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   // UI State
-  const [currentSimulationState, setCurrentSimulationState] =
-    React.useState<string>('');
-  const [transitionDisplayMode, setTransitionDisplayMode] = React.useState<
-    'all' | 'active' | 'available'
-  >('all');
   const [activeStates, setActiveStates] = React.useState<Set<string>>(
     new Set()
   );
@@ -404,7 +402,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
       if (result.success) {
         previousScxmlRef.current = result.newContent;
-        onSCXMLChange(result.newContent, 'property');
+        onSCXMLChange(result.newContent, 'resize');
 
         setTimeout(() => {
           setEdges((edges) => [...edges]);
@@ -490,9 +488,17 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
 
   const handleEdgesChange = useCallback(
     (changes: any[]) => {
-      onEdgesChange(changes);
+      // Filter out selection changes - they don't affect SCXML structure
+      const structuralChanges = changes.filter(
+        (change) => change.type !== 'select'
+      );
 
-      const deleteChanges = changes.filter(
+      // Only pass structural changes to ReactFlow
+      if (structuralChanges.length > 0) {
+        onEdgesChange(structuralChanges);
+      }
+
+      const deleteChanges = structuralChanges.filter(
         (change) => change.type === 'remove'
       );
 
@@ -668,7 +674,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     (stateId: string, event?: React.MouseEvent) => {
       // Check if the click is on the editable label - if so, don't open actions editor
       // This allows double-click on label to work properly
-      const isLabelClick = event?.target &&
+      const isLabelClick =
+        event?.target &&
         (event.target as HTMLElement).closest('[data-label-editable="true"]');
 
       setSelectedTransitions(new Set());
@@ -730,7 +737,12 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   // ==================== REACTFLOW NODE CHANGE HANDLER ====================
   const handleNodesChange = useCallback(
     (changes: any[]) => {
-      const removeChanges = changes.filter(
+      // Filter out selection changes - they don't affect SCXML structure
+      const structuralChanges = changes.filter(
+        (change) => change.type !== 'select'
+      );
+
+      const removeChanges = structuralChanges.filter(
         (change) => change.type === 'remove'
       );
 
@@ -739,7 +751,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         const nodeIdsToDelete = removeChanges.map((change) => change.id);
         handleNodeDelete(nodeIdsToDelete);
 
-        const nonRemoveChanges = changes.filter(
+        const nonRemoveChanges = structuralChanges.filter(
           (change) => change.type !== 'remove'
         );
         if (nonRemoveChanges.length > 0) {
@@ -749,7 +761,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       }
 
       // Track dragging state across change events
-      changes.forEach((change) => {
+      structuralChanges.forEach((change) => {
         if (change.type === 'position') {
           if (change.dragging === true) {
             // User is actively dragging this node
@@ -758,11 +770,11 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         }
       });
 
-      // Pass changes to ReactFlow for visual updates
-      onNodesChangeRef.current(changes);
+      // Pass structural changes to ReactFlow for visual updates
+      onNodesChangeRef.current(structuralChanges);
 
       // Check for position changes where dragging ended
-      const dragEndChanges = changes.filter(
+      const dragEndChanges = structuralChanges.filter(
         (change) => change.type === 'position' && change.dragging === false
       );
 
@@ -805,7 +817,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           const positionMap = new Map<string, { x: number; y: number }>();
           const currentNodes = [...nodesRef.current];
 
-          changes.forEach((change) => {
+          structuralChanges.forEach((change) => {
             if (change.type === 'position' && change.position) {
               const nodeIndex = currentNodes.findIndex(
                 (n) => n.id === change.id
@@ -1719,8 +1731,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     const enhancements = new Map();
 
     filteredNodes.forEach((node) => {
-      const isActive =
-        activeStates.has(node.id) || node.id === currentSimulationState;
+      const isActive = activeStates.has(node.id);
       const visualMetadata = metadataManagerRef.current?.getVisualMetadata(
         node.id
       );
@@ -1753,7 +1764,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     });
 
     return enhancements;
-  }, [filteredNodes, activeStates, currentSimulationState]);
+  }, [filteredNodes, activeStates]);
 
   const enhancedNodes = React.useMemo(() => {
     return filteredNodes.map((node) => {
@@ -1810,12 +1821,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
     return hierarchyFilteredEdges
       .filter((edge) => true)
       .map((edge) => applySelectionStyles(edge));
-  }, [
-    hierarchyFilteredEdges,
-    activeStates,
-    transitionDisplayMode,
-    selectedTransitions,
-  ]);
+  }, [hierarchyFilteredEdges, activeStates, selectedTransitions]);
 
   // ==================== EFFECTS ====================
   // Set node delete handler ref
@@ -1844,14 +1850,19 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       (isUpdatingFromHistory || !isUpdatingPositionRef.current) &&
       enhancedNodes.length > 0
     ) {
-      setNodes(enhancedNodes);
+      if (historyActionType === 'node-resize') {
+        setNodes([]);
+        setEdges([]);
+      } else {
+        setNodes(enhancedNodes);
 
-      const selectableEdges = hierarchyFilteredEdges.map((edge) => ({
-        ...edge,
-        selectable: true,
-        focusable: true,
-      }));
-      setEdges(selectableEdges);
+        const selectableEdges = hierarchyFilteredEdges.map((edge) => ({
+          ...edge,
+          selectable: true,
+          focusable: true,
+        }));
+        setEdges(selectableEdges);
+      }
     }
   }, [
     scxmlContent,

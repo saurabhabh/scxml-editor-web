@@ -4,10 +4,11 @@ import React, { useEffect, useCallback } from 'react';
 import { Undo2, Redo2 } from 'lucide-react';
 import { useHistoryStore } from '@/stores/history-store';
 import { HistoryManager } from '@/lib/history/history-manager';
+import type { ActionType } from '@/types/history';
 
 interface UndoRedoControlsProps {
-  onUndo?: (content: string) => void;
-  onRedo?: (content: string) => void;
+  onUndo?: (content: string, actionType: ActionType) => void;
+  onRedo?: (content: string, actionType: ActionType) => void;
   className?: string;
   showTooltips?: boolean;
 }
@@ -23,16 +24,16 @@ export const UndoRedoControls: React.FC<UndoRedoControlsProps> = ({
   const historyManager = HistoryManager.getInstance();
 
   const handleUndo = useCallback(() => {
-    const content = historyManager.undo();
-    if (content !== null && onUndo) {
-      onUndo(content);
+    const result = historyManager.undo();
+    if (result !== null && onUndo) {
+      onUndo(result.content, result.actionType);
     }
   }, [onUndo]);
 
   const handleRedo = useCallback(() => {
-    const content = historyManager.redo();
-    if (content !== null && onRedo) {
-      onRedo(content);
+    const result = historyManager.redo();
+    if (result !== null && onRedo) {
+      onRedo(result.content, result.actionType);
     }
   }, [onRedo]);
 

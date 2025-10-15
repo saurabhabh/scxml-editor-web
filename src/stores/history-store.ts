@@ -44,11 +44,19 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     const state = get();
     if (!state.canUndo()) return null;
 
+    // Get the entry we're currently at (the one being undone)
+    const currentEntry = state.entries[state.currentIndex];
+
     const newIndex = state.currentIndex - 1;
     set({ currentIndex: newIndex });
 
-    // Return the entry we're undoing TO (not FROM)
-    return state.entries[newIndex];
+    // Return the entry we're undoing TO (for content)
+    // but with the actionType from the entry we're undoing (for tracking what changed)
+    const targetEntry = state.entries[newIndex];
+    return {
+      ...targetEntry,
+      actionType: currentEntry.actionType, // Action type of what we're undoing
+    };
   },
 
   redo: () => {
@@ -56,10 +64,14 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     if (!state.canRedo()) return null;
 
     const newIndex = state.currentIndex + 1;
+
+    // Get the entry we're redoing (the one we're going to)
+    const redoEntry = state.entries[newIndex];
+
     set({ currentIndex: newIndex });
 
-    // Return the entry we're redoing TO
-    return state.entries[newIndex];
+    // Return the entry with its own actionType (what we're redoing)
+    return redoEntry;
   },
 
   canUndo: () => {
