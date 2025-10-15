@@ -385,6 +385,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         return;
       }
       isUpdatingPositionRef.current = true;
+      // Force edge recalculation immediately
+      setEdges((edges) => [...edges]);
 
       // Use command pattern for unified SCXML updates
       const {
@@ -405,14 +407,14 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         onSCXMLChange(result.newContent, 'resize');
 
         setTimeout(() => {
-          setEdges((edges) => [...edges]);
           isUpdatingPositionRef.current = false;
         }, 10);
       } else {
         console.error('Failed to resize node:', result.error);
+        isUpdatingPositionRef.current = false;
       }
     },
-    [onSCXMLChange]
+    [onSCXMLChange, setEdges]
   );
 
   // ==================== EDGE HANDLERS ====================
