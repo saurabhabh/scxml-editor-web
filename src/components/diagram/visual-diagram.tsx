@@ -417,7 +417,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         isUpdatingPositionRef.current = false;
       }
     },
-    [onSCXMLChange, setEdges]
+    [onSCXMLChange, setNodes, setEdges]
   );
 
   // ==================== EDGE HANDLERS ====================
