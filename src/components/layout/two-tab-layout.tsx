@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { Code, Workflow, FileText } from 'lucide-react';
 import { InlineTipsCarousel } from './inline-tips-carousel';
 
@@ -164,111 +163,6 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
         {activeTab === 'visual' && (
           <div className='h-full bg-gray-100'>{visualDiagram}</div>
         )}
-      </div>
-    </div>
-  );
-};
-
-// Alternative split-panel layout (side-by-side)
-export const SplitPanelLayout: React.FC<TwoTabLayoutProps> = ({
-  codeEditor,
-  visualDiagram,
-  fileInfo,
-  actions,
-}) => {
-  // Tips for the carousel
-  const editorTips = [
-    {
-      tab: 'code' as const,
-      content: (
-        <>
-          Press{' '}
-          <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
-            Ctrl+Space
-          </kbd>{' '}
-          for autocomplete
-        </>
-      ),
-    },
-    {
-      tab: 'code' as const,
-      content: (
-        <>
-          Type{' '}
-          <kbd className='px-1 py-0.5 bg-gray-200 rounded text-gray-700 font-mono text-xs'>
-            &quot;
-          </kbd>{' '}
-          inside tags for attributes
-        </>
-      ),
-    },
-    {
-      tab: 'both' as const,
-      content: 'Undo/Redo with Ctrl+Z and Ctrl+Y',
-    },
-  ];
-
-  return (
-    <div className='h-full flex flex-col'>
-      {/* Header */}
-      <div className='flex items-center justify-between p-4 border-b bg-white'>
-        <div className='flex items-center space-x-3'>
-          <FileText className='h-5 w-5 text-gray-500' />
-          <h2 className='text-lg font-semibold text-gray-900'>
-            {fileInfo?.name || 'Untitled Document'}
-          </h2>
-          {fileInfo?.isDirty && (
-            <span className='text-xs text-amber-600 font-medium'>
-              • Modified
-            </span>
-          )}
-        </div>
-        {actions && (
-          <div className='flex items-center space-x-3'>{actions}</div>
-        )}
-      </div>
-
-      {/* Resizable Panels */}
-      <div className='flex-1'>
-        <PanelGroup direction='horizontal' className='h-full'>
-          <Panel defaultSize={50} minSize={30}>
-            <div className='h-full flex flex-col'>
-              <div className='flex items-center justify-between px-4 py-2 border-b bg-gray-50'>
-                <div className='flex items-center'>
-                  <Code className='h-4 w-4 mr-2 text-gray-600' />
-                  <span className='text-sm font-medium text-gray-700'>
-                    Code Editor
-                  </span>
-                </div>
-                <InlineTipsCarousel
-                  tips={editorTips}
-                  activeTab='code'
-                  autoAdvance={true}
-                  autoAdvanceInterval={6000}
-                />
-              </div>
-              <div className='flex-1 p-4 bg-white overflow-hidden'>
-                {codeEditor}
-              </div>
-            </div>
-          </Panel>
-
-          <PanelResizeHandle className='w-2 bg-gray-200 hover:bg-gray-300 transition-colors' />
-
-          <Panel defaultSize={50} minSize={30}>
-            <div className='h-full flex flex-col'>
-              <div className='flex items-center px-4 py-2 border-b bg-gray-50'>
-                <Workflow className='h-4 w-4 mr-2 text-gray-600' />
-                <span className='text-sm font-medium text-gray-700'>
-                  Visual Diagram
-                </span>
-              </div>
-              <div className='flex-1 bg-gray-100 overflow-hidden'>
-                {visualDiagram}
-              </div>
-            </div>
-          </Panel>
-        </PanelGroup>
       </div>
     </div>
   );

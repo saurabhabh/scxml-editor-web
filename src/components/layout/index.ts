@@ -1,1 +1,1 @@
-export { TwoTabLayout, SplitPanelLayout } from './two-tab-layout';
+export { TwoTabLayout } from './two-tab-layout';

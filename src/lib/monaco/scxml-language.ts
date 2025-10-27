@@ -1,5 +1,4 @@
 import type * as monaco from 'monaco-editor';
-import { registerVisualNamespaceFeatures } from './visual-namespace-completion';
 
 export interface SCXMLCompletionItem {
   label: string;
@@ -434,9 +433,6 @@ function getAttributeSuggestions(
 export function setupSCXMLLanguageSupport(
   monaco: typeof import('monaco-editor')
 ) {
-  // Register visual namespace features first
-  registerVisualNamespaceFeatures(monaco, 'xml');
-  
   // Legacy completion provider disabled to prevent duplicates
   // The enhanced completion provider in enhanced-scxml-completion.ts
   // provides more comprehensive suggestions with better context awareness

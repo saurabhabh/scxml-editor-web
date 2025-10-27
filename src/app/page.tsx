@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { XMLEditor, type XMLEditorRef } from '@/components/editor';
 import {
   FileUpload,
-  FileDownload,
   VisualMetadataExport,
 } from '@/components/file-operations';
 import { TwoTabLayout } from '@/components/layout';
