@@ -9,6 +9,7 @@
 
 export { BaseCommand, type Command, type CommandResult } from './base-command';
 export { UpdatePositionCommand } from './update-position-command';
+export { BatchUpdatePositionCommand } from './batch-update-position-command';
 export { UpdatePositionAndDimensionsCommand } from './update-position-and-dimensions-command';
 export { RenameStateCommand } from './rename-state-command';
 export { UpdateTransitionCommand } from './update-transition-command';

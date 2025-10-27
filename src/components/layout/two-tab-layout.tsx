@@ -11,10 +11,10 @@ interface TwoTabLayoutProps {
     name?: string;
     isDirty?: boolean;
   };
-  actions?: React.ReactNode;
+  actions?: React.ReactNode | ((activeTab: TabType, setActiveTab: (tab: TabType) => void) => React.ReactNode);
 }
 
-type TabType = 'code' | 'visual';
+export type TabType = 'code' | 'visual';
 
 export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
   codeEditor,
@@ -113,7 +113,9 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
           )}
         </div>
         {actions && (
-          <div className='flex items-center space-x-3'>{actions}</div>
+          <div className='flex items-center space-x-3'>
+            {typeof actions === 'function' ? actions(activeTab, setActiveTab) : actions}
+          </div>
         )}
       </div>
 

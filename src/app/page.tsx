@@ -6,7 +6,7 @@ import {
   FileUpload,
   VisualMetadataExport,
 } from '@/components/file-operations';
-import { TwoTabLayout } from '@/components/layout';
+import { TwoTabLayout, type TabType } from '@/components/layout';
 import { VisualDiagram } from '@/components/diagram';
 import { Upload } from 'lucide-react';
 import { ErrorBoundary, ValidationPanel, UndoRedoControls } from '@/components/ui';
@@ -302,7 +302,7 @@ export default function Home() {
     </div>
   );
 
-  const renderActions = () => (
+  const renderActions = (activeTab: TabType, setActiveTab: (tab: TabType) => void) => (
     <>
       <input
         ref={fileInputRef}
@@ -329,7 +329,13 @@ export default function Home() {
       </button>
 
       <button
-        onClick={() => setValidationPanelVisible(!isValidationPanelVisible)}
+        onClick={() => {
+          // If on visual tab, switch to code editor tab
+          if (activeTab === 'visual') {
+            setActiveTab('code');
+          }
+          setValidationPanelVisible(!isValidationPanelVisible);
+        }}
         className={`cursor-pointer text-sm px-3 py-2 rounded-md transition-colors ${
           hasErrors
             ? 'bg-red-100 text-red-800 hover:bg-red-200'
@@ -461,7 +467,7 @@ export default function Home() {
                 name: fileInfo?.name,
                 isDirty,
               }}
-              actions={renderActions()}
+              actions={renderActions}
             />
           </div>
         )}

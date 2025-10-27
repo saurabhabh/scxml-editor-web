@@ -105,25 +105,58 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
     const hasExitActions = exitActions.length > 0;
     const hasActions = hasEntryActions || hasExitActions;
 
-    // Handle label editing
-    const handleLabelDoubleClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (onLabelChange) {
+    // Respond to isEditing flag from parent (triggered by double-click on node)
+    React.useEffect(() => {
+      if (isEditing && onLabelChange) {
         setEditingLabel(true);
         setTempLabel(label);
       }
-    };
+    }, [isEditing, onLabelChange, label]);
 
     const handleLabelSubmit = () => {
       if (onLabelChange && tempLabel.trim() !== label) {
         onLabelChange(tempLabel.trim());
       }
       setEditingLabel(false);
+      // Reset isEditing flag in parent
+      if (isEditing) {
+        setNodes((nds) =>
+          nds.map((node) => {
+            if (node.id === id) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  isEditing: false,
+                },
+              };
+            }
+            return node;
+          })
+        );
+      }
     };
 
     const handleLabelCancel = () => {
       setTempLabel(label);
       setEditingLabel(false);
+      // Reset isEditing flag in parent
+      if (isEditing) {
+        setNodes((nds) =>
+          nds.map((node) => {
+            if (node.id === id) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  isEditing: false,
+                },
+              };
+            }
+            return node;
+          })
+        );
+      }
     };
 
     const handleLabelKeyDown = (e: React.KeyboardEvent) => {
@@ -134,13 +167,7 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
       }
     };
 
-    // Handle actions editing
-    const handleActionsDoubleClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (onActionsChange) {
-        setEditingActions(true);
-      }
-    };
+    // Actions editing is now handled through the actions editor panel in visual-diagram
 
     const handleActionsSubmit = () => {
       if (onActionsChange) {
@@ -527,9 +554,8 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                 ) : (
                   <span
                     data-label-editable='true'
-                    className='font-bold text-gray-800 text-lg cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors'
-                    onDoubleClick={handleLabelDoubleClick}
-                    title='Double-click to edit state name'
+                    className='font-bold text-gray-800 text-lg px-2 py-1 rounded-lg'
+                    title='Double-click node to edit state name'
                   >
                     {label}
                   </span>
@@ -608,9 +634,8 @@ export const SCXMLStateNode = memo<NodeProps<SCXMLStateNodeData>>(
                   )} */}
                     {onActionsChange && !hasActions && (
                       <span
-                        className='bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-medium cursor-pointer hover:bg-gray-200'
-                        onDoubleClick={handleActionsDoubleClick}
-                        title='Double-click to add actions'
+                        className='bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-md font-medium'
+                        title='Click node to add actions'
                       >
                         + Add Actions
                       </span>

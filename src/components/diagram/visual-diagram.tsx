@@ -675,66 +675,77 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
   );
 
   // ==================== STATE CLICK HANDLERS ====================
+  const clickTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const clickCountRef = React.useRef<number>(0);
+
   const handleStateClick = useCallback(
     (stateId: string, event?: React.MouseEvent) => {
-      // Check if the click is on the editable label - if so, don't open actions editor
-      // This allows double-click on label to work properly
-      const isLabelClick =
-        event?.target &&
-        (event.target as HTMLElement).closest('[data-label-editable="true"]');
+      // Increment click count
+      clickCountRef.current++;
 
-      setSelectedTransitions(new Set());
-      setSelectedEdgeForEdit(null);
+      // Clear any existing timeout
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
 
-      setActiveStates((prev) => {
-        const newStates = new Set(prev);
+      // Set a timeout to handle single click after a delay
+      clickTimeoutRef.current = setTimeout(() => {
+        // Only process single click if click count is 1
+        if (clickCountRef.current === 1) {
+          setSelectedTransitions(new Set());
+          setSelectedEdgeForEdit(null);
 
-        // If Ctrl (or Cmd on Mac) is pressed, allow multi-select
-        const isMultiSelect = event?.ctrlKey || event?.metaKey;
+          setActiveStates((prev) => {
+            const newStates = new Set(prev);
 
-        if (isMultiSelect) {
-          // Toggle selection when Ctrl is held
-          if (newStates.has(stateId)) {
-            newStates.delete(stateId);
-            setSelectedStateForActions(null);
-          } else {
-            newStates.add(stateId);
-          }
-        } else {
-          // Single selection mode - clear all and select only this state
-          if (newStates.has(stateId)) {
-            newStates.clear();
-            setSelectedStateForActions(null);
-          } else {
-            newStates.clear();
-            newStates.add(stateId);
+            // If Ctrl (or Cmd on Mac) is pressed, allow multi-select
+            const isMultiSelect = event?.ctrlKey || event?.metaKey;
 
-            // Show actions editor for single selected state
-            // BUT NOT if clicking on the label (to allow double-click editing)
-            if (!isLabelClick) {
-              const node = nodes.find((n) => n.id === stateId);
-              if (node && node.data) {
-                const parseActions = (actions: string[]) => {
-                  return actions
-                    .filter((a) => a.startsWith('assign|'))
-                    .map((a) => {
-                      const parts = a.split('|');
-                      return { location: parts[1] || '', expr: parts[2] || '' };
-                    });
-                };
+            if (isMultiSelect) {
+              // Toggle selection when Ctrl is held
+              if (newStates.has(stateId)) {
+                newStates.delete(stateId);
+                setSelectedStateForActions(null);
+              } else {
+                newStates.add(stateId);
+              }
+            } else {
+              // Single selection mode - clear all and select only this state
+              if (newStates.has(stateId)) {
+                newStates.clear();
+                setSelectedStateForActions(null);
+              } else {
+                newStates.clear();
+                newStates.add(stateId);
 
-                setSelectedStateForActions({
-                  id: stateId,
-                  entryActions: parseActions(node.data.entryActions || []),
-                  exitActions: parseActions(node.data.exitActions || []),
-                });
+                // Show actions editor for single selected state
+                const node = nodes.find((n) => n.id === stateId);
+                if (node && node.data) {
+                  const parseActions = (actions: string[]) => {
+                    return actions
+                      .filter((a) => a.startsWith('assign|'))
+                      .map((a) => {
+                        const parts = a.split('|');
+                        return { location: parts[1] || '', expr: parts[2] || '' };
+                      });
+                  };
+
+                  setSelectedStateForActions({
+                    id: stateId,
+                    entryActions: parseActions(node.data.entryActions || []),
+                    exitActions: parseActions(node.data.exitActions || []),
+                  });
+                }
               }
             }
-          }
+
+            return newStates;
+          });
         }
 
-        return newStates;
-      });
+        // Reset click count
+        clickCountRef.current = 0;
+      }, 250); // 250ms delay to distinguish single vs double click
     },
     [nodes]
   );
@@ -837,17 +848,39 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             }
           });
 
-          for (const change of positionChanges) {
-            const node = currentNodes.find((n) => n.id === change.id);
+          // Get all nodes that ended dragging - including all selected nodes
+          const nodesToUpdate = new Set<string>();
+
+          // Add all nodes from positionChanges (nodes that were explicitly dragged)
+          positionChanges.forEach((change) => {
+            nodesToUpdate.add(change.id);
+          });
+
+          // Also check for other selected nodes that may have moved along with the drag
+          // but didn't trigger individual drag events
+          if (nodesToUpdate.size > 0) {
+            currentNodes.forEach((node) => {
+              if (node.selected && positionMap.has(node.id)) {
+                nodesToUpdate.add(node.id);
+              }
+            });
+          }
+
+          // Collect all position updates to batch them
+          const batchUpdates: Array<{ nodeId: string; x: number; y: number }> =
+            [];
+
+          for (const nodeId of nodesToUpdate) {
+            const node = currentNodes.find((n) => n.id === nodeId);
             if (!node?.position) continue;
 
             // In hierarchy navigation mode, positions are always absolute
             // because parentId is removed from filtered nodes (see use-hierarchy-navigation.ts:45)
             // The position we get from ReactFlow is already the correct absolute position
-            let absoluteX = positionMap.get(change.id)?.x ?? node.position.x;
-            let absoluteY = positionMap.get(change.id)?.y ?? node.position.y;
+            let absoluteX = positionMap.get(nodeId)?.x ?? node.position.x;
+            let absoluteY = positionMap.get(nodeId)?.y ?? node.position.y;
 
-            const lastPos = lastPositionUpdateRef.current.get(change.id);
+            const lastPos = lastPositionUpdateRef.current.get(nodeId);
             if (
               lastPos &&
               Math.abs(lastPos.x - absoluteX) < 2 &&
@@ -856,16 +889,43 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
               continue;
             }
 
-            lastPositionUpdateRef.current.set(change.id, {
+            lastPositionUpdateRef.current.set(nodeId, {
               x: absoluteX,
               y: absoluteY,
             });
 
-            handleNodePositionChangeRef.current(
-              change.id,
-              absoluteX,
-              absoluteY
-            );
+            batchUpdates.push({ nodeId, x: absoluteX, y: absoluteY });
+          }
+
+          // Execute batch update if there are any updates
+          if (batchUpdates.length > 0) {
+            const currentScxmlContent = scxmlContentRef.current;
+            if (!onSCXMLChange || !currentScxmlContent) {
+              console.warn(
+                'Cannot update positions: SCXML content not available'
+              );
+              return;
+            }
+
+            try {
+              const {
+                BatchUpdatePositionCommand,
+              } = require('@/lib/commands/batch-update-position-command');
+              const command = new BatchUpdatePositionCommand(batchUpdates);
+
+              const result = command.execute(currentScxmlContent);
+
+              if (result.success) {
+                previousScxmlRef.current = result.newContent;
+                onSCXMLChange(result.newContent, 'position');
+              } else {
+                console.error('Failed to update positions:', result.error);
+                isUpdatingPositionRef.current = false;
+              }
+            } catch (error) {
+              isUpdatingPositionRef.current = false;
+              console.error('Failed to sync position changes:', error);
+            }
           }
         } finally {
           setTimeout(() => {
@@ -1964,6 +2024,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
       }
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
     };
   }, []);
   // ==================== RENDER ====================
@@ -2226,6 +2289,28 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           onConnect={onConnect}
           onReconnect={onReconnect}
           onNodeClick={(event, node) => handleStateClick(node.id, event)}
+          onNodeDoubleClick={(event, node) => {
+            // Double-click on node should trigger label editing
+            event.stopPropagation();
+            const nodeElement = nodes.find((n) => n.id === node.id);
+            if (nodeElement?.data?.onLabelChange) {
+              // Trigger label editing by updating node data
+              setNodes((nds) =>
+                nds.map((n) => {
+                  if (n.id === node.id) {
+                    return {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        isEditing: true,
+                      },
+                    };
+                  }
+                  return n;
+                })
+              );
+            }
+          }}
           onEdgeClick={handleEdgeClick}
           onEdgeMouseEnter={handleEdgeMouseEnter}
           onEdgeMouseLeave={handleEdgeMouseLeave}
