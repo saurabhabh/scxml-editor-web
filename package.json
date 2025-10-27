@@ -13,6 +13,7 @@
     "@tisoap/react-flow-smart-edge": "^3.0.0",
     "@types/d3": "^7.4.3",
     "@types/uuid": "^10.0.0",
+    "@vercel/analytics": "^1.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "elkjs": "^0.11.0",
