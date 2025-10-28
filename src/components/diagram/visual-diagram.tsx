@@ -407,11 +407,19 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         onSCXMLChange(result.newContent, 'resize');
 
         // Ensure final edge recalculation after resize completes
-        setTimeout(() => {
+        // setTimeout(() => {
+        //   setNodes((node) => [...enhancedNodes]);
+        //   setEdges((edges) => [...edges]);
+        //   isUpdatingPositionRef.current = false;
+        // }, 50);
+
+         requestAnimationFrame(() => {
+          // Force edge recalculation by triggering a re-render
+          // Use functional update to ensure we're working with current state
           setNodes((node) => [...enhancedNodes]);
-          setEdges((edges) => [...edges]);
+          setEdges((currentEdges) => [...currentEdges]);
           isUpdatingPositionRef.current = false;
-        }, 50);
+        });
       } else {
         console.error('Failed to resize node:', result.error);
         isUpdatingPositionRef.current = false;
@@ -726,7 +734,10 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                       .filter((a) => a.startsWith('assign|'))
                       .map((a) => {
                         const parts = a.split('|');
-                        return { location: parts[1] || '', expr: parts[2] || '' };
+                        return {
+                          location: parts[1] || '',
+                          expr: parts[2] || '',
+                        };
                       });
                   };
 
@@ -2108,8 +2119,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                   newLabel,
                   selectedEdgeForEdit.editingField
                 );
-              } else {
-                console.log('[TransitionEdit] Skipped - newLabel is empty');
               }
             }}
             onKeyDown={(e) => {
@@ -2124,8 +2133,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                     newLabel,
                     selectedEdgeForEdit.editingField
                   );
-                } else {
-                  console.log('[TransitionEdit] Skipped - newLabel is empty');
                 }
                 setSelectedEdgeForEdit(null);
                 setSelectedTransitions(new Set());
