@@ -9,6 +9,7 @@ export interface SCXMLElement {
   '@_datamodel'?: string;
   '@_binding'?: 'early' | 'late';
   '@_initial'?: string;
+  initial?: InitialElement | InitialElement[];
   datamodel?: DataModelElement;
   state?: StateElement | StateElement[];
   parallel?: ParallelElement | ParallelElement[];
@@ -67,7 +68,7 @@ export interface OnExitElement {
 }
 
 export interface InitialElement {
-  transition: TransitionElement;
+  transition: TransitionElement | TransitionElement[];
 }
 
 export interface HistoryElement {

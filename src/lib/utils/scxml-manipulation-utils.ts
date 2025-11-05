@@ -371,12 +371,43 @@ export function removeTransitionFromState(
 
 /**
  * Remove a specific transition by its edge ID
- * Edge ID format: "source-to-target-event[conditionHash]-randomSuffix"
+ * Edge ID format: "source-to-target-event[conditionHash]-idx{index}"
  */
 export function removeTransitionByEdgeId(
   scxmlDoc: SCXMLDocument,
   edgeId: string
 ): boolean {
+  // Try to parse the transition index from the edge ID (new deterministic format)
+  const indexMatch = edgeId.match(/-idx(\d+)$/);
+
+  if (indexMatch) {
+    // New deterministic format: use the index directly
+    const transitionIndex = parseInt(indexMatch[1], 10);
+
+    // Parse source from edge ID
+    const toIndex = edgeId.indexOf('-to-');
+    if (toIndex === -1) return false;
+
+    const sourceId = edgeId.substring(0, toIndex);
+
+    // Find the source state
+    const sourceState = findStateById(scxmlDoc, sourceId);
+    if (!sourceState || !sourceState.transition) return false;
+
+    // Remove transition by index
+    const transitions = Array.isArray(sourceState.transition)
+      ? sourceState.transition
+      : [sourceState.transition];
+
+    if (transitionIndex >= 0 && transitionIndex < transitions.length) {
+      removeTransitionFromState(sourceState, transitionIndex);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Fallback for old format (backward compatibility)
   // Parse edge ID: source-to-target-event[conditionHash]-randomSuffix
   const toIndex = edgeId.indexOf('-to-');
   if (toIndex === -1) return false;

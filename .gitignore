@@ -1,4 +1,4 @@
-# Dependencies
+a# Dependencies
 node_modules/
 /.pnp
 .pnp.js
@@ -39,3 +39,4 @@ yarn-error.log*
 next-env.d.ts
 .claude/settings.local.json
 xml/examples/*    
+.vscode/settings.json

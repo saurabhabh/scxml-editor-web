@@ -14,15 +14,15 @@ import {
   removeTransitionByEdgeId,
 } from '@/lib/utils/scxml-manipulation-utils';
 import { computeVisualStyles } from '@/lib/utils/visual-style-utils';
+import { ActionType } from '@/types/history';
 import type { SCXMLDocument, TransitionElement } from '@/types/scxml';
-import { VISUAL_METADATA_CONSTANTS } from '@/types/visual-metadata';
 import {
   SmartBezierEdge,
   SmartStepEdge,
   SmartStraightEdge,
 } from '@tisoap/react-flow-smart-edge';
-import { ArrowUp, ChevronRight, Home, Network } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { ChevronRight } from 'lucide-react';
+import React, { useCallback } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -44,11 +44,9 @@ import {
   type NodeTypes,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { SimulationControls } from '../simulation';
 import { SCXMLTransitionEdge } from './edges/scxml-transition-edge';
 import { HistoryWrapperNode } from './nodes/history-wrapper-node';
 import { SCXMLStateNode } from './nodes/scxml-state-node';
-import { ActionType } from '@/types/history';
 
 // ==================== TYPES & INTERFACES ====================
 interface VisualDiagramProps {
@@ -413,7 +411,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         //   isUpdatingPositionRef.current = false;
         // }, 50);
 
-         requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
           // Force edge recalculation by triggering a re-render
           // Use functional update to ensure we're working with current state
           setNodes((node) => [...enhancedNodes]);
@@ -436,13 +434,23 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
       originalEvent: string | undefined,
       originalCond: string | undefined,
       newLabel: string,
-      editingField: 'event' | 'cond' = 'event'
+      editingField: 'event' | 'cond' = 'event',
+      edgeId?: string
     ) => {
       if (!onSCXMLChange || !scxmlContent) {
         return;
       }
 
       try {
+        // Extract transition index from edge ID for deterministic lookup
+        let transitionIndex: number | undefined;
+        if (edgeId) {
+          const {
+            parseTransitionIndexFromEdgeId,
+          } = require('@/lib/converters/converter-modules');
+          transitionIndex = parseTransitionIndexFromEdgeId(edgeId);
+        }
+
         // Use command pattern for unified SCXML updates
         const { UpdateTransitionCommand } = require('@/lib/commands');
         const command = new UpdateTransitionCommand(
@@ -451,7 +459,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
           originalEvent,
           originalCond,
           newLabel,
-          editingField
+          editingField,
+          transitionIndex
         );
 
         const result = command.execute(scxmlContent);
@@ -528,9 +537,16 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             }
 
             if (anyRemoved) {
+              // Re-extract visual metadata after deletion to ensure metadata store is in sync
+              // This prevents stale index-based transition metadata from being incorrectly applied
+              parserRef.current
+                .getVisualMetadataManager()
+                .extractAllVisualMetadata(scxmlDoc);
+
               const updatedSCXML = parserRef.current.serialize(scxmlDoc, true);
               onSCXMLChange(updatedSCXML, 'structure');
               setSelectedTransitions(new Set());
+              setSelectedEdgeForEdit(null);
             }
           }
         } catch (error) {
@@ -1706,14 +1722,14 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         let y = 100;
 
         if (parentId) {
-          const childNodes = nodes.filter((n) => n.parentId === parentId);
+          const childNodes = nodes.length;
 
-          if (childNodes.length > 0) {
+          if (childNodes) {
             const cols = 4;
             const rowHeight = 120;
             const colWidth = 200;
 
-            const existingPositions = childNodes.map((n) => ({
+            const existingPositions = nodes.map((n) => ({
               col: Math.floor((n.position?.x || 0) / colWidth),
               row: Math.floor(((n.position?.y || 0) - 100) / rowHeight),
             }));
@@ -2058,11 +2074,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         </div>
       )}
 
-      {/* <SimulationControls
-        scxmlContent={scxmlContent}
-        onStateChange={setCurrentSimulationState}
-      /> */}
-
       {/* Hierarchy Navigation Controls */}
       <div className='flex items-center gap-2 px-4 py-2 bg-white border-b shadow-sm'>
         <div className='flex items-center gap-1 flex-1'>
@@ -2092,9 +2103,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         )}
       </div>
 
-      {/* Transition Label Editor */}
+      {/* Transition Label Editor - Overlays the diagram */}
       {selectedEdgeForEdit && (
-        <div className='flex items-center gap-3 px-4 py-2 bg-blue-50 border-b'>
+        <div className='absolute top-[49px] left-0 right-0 z-10 flex items-center gap-3 px-4 py-2 bg-blue-50 border-b shadow-md'>
           <span className='text-sm font-medium text-gray-700'>
             Edit Transition:
           </span>
@@ -2108,19 +2119,6 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                 rawValue: newValue,
               });
             }}
-            onBlur={() => {
-              const newLabel = selectedEdgeForEdit.rawValue || '';
-              if (newLabel) {
-                handleTransitionLabelChange(
-                  selectedEdgeForEdit.source,
-                  selectedEdgeForEdit.target,
-                  selectedEdgeForEdit.event,
-                  selectedEdgeForEdit.cond,
-                  newLabel,
-                  selectedEdgeForEdit.editingField
-                );
-              }
-            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 const newLabel = selectedEdgeForEdit.rawValue || '';
@@ -2131,7 +2129,8 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                     selectedEdgeForEdit.event,
                     selectedEdgeForEdit.cond,
                     newLabel,
-                    selectedEdgeForEdit.editingField
+                    selectedEdgeForEdit.editingField,
+                    selectedEdgeForEdit.id
                   );
                 }
                 setSelectedEdgeForEdit(null);
@@ -2161,9 +2160,9 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
         </div>
       )}
 
-      {/* State Actions Editor (onentry/onexit with assign) */}
+      {/* State Actions Editor (onentry/onexit with assign) - Overlays the diagram */}
       {selectedStateForActions && (
-        <div className='flex items-center gap-3 px-4 py-2 bg-green-50 border-b'>
+        <div className='absolute top-[49px] left-0 right-0 z-10 flex items-center gap-3 px-4 py-2 bg-green-50 border-b shadow-md'>
           <span className='text-xs font-medium text-gray-700'>
             Edit onentry for {selectedStateForActions.id}:
           </span>
@@ -2393,7 +2392,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
             variant={BackgroundVariant.Dots}
           />
           <Controls
-            position='top-left'
+            position='bottom-left'
             showZoom={true}
             showFitView={true}
             showInteractive={true}

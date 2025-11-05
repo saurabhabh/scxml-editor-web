@@ -6,10 +6,15 @@ export const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/s
     <transition event="loop_open == 1 || Oxygen &gt; 19%" target="loop_open" viz:waypoints="-1285,-572;-1355,-546"/>
     <transition event="loop_open == 0" target="loop_closed" viz:waypoints="-1214,-573;-1043,-530"/>
   </state>
-  <state id="loop_open" viz:xywh="-1451,-496,160,80">
+  <state id="loop_open" viz:xywh="-1451,-496,160,80" initial="state_1">
     <onentry>
       <assign location="light" expr="0xFFFFFF"/>
     </onentry>
+        <state id="state_1" viz:xywh="-88,81,206,80">
+      <transition event="event100" target="state_2" viz:id="8a35d658-0f62-4195-a85f-ff62411a21a7" viz:sourceHandle="left" viz:targetHandle="right" viz:waypoints="183,292"/>
+      <transition event="event200" target="state_2" viz:id="ed5c07b3-3fff-4ddb-b361-b2cab99e4d41" viz:sourceHandle="bottom" viz:targetHandle="top"/>
+    </state>
+    <state id="state_2" viz:xywh="250,100,160,80"/>
   </state>
   <state id="loop_closed" initial="hal_1" viz:xywh="-1115,-462,188,82">
     <state id="hal_1" viz:xywh="-220,45,176,85">
@@ -17,6 +22,7 @@ export const DEFAULT_SCXML_TEMPLATE = `<scxml xmlns="http://www.w3.org/2005/07/s
       <onentry>
         <assign location="light" expr="0xFFFFFF"/>
       </onentry>
+      
     </state>
     <state id="hal_3" viz:xywh="97,51,160,80" initial="not_connected">
       <state id="cooling_water_connected" viz:xywh="-270,580,303,66">

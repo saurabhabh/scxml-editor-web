@@ -96,7 +96,6 @@ const WaypointHandle: React.FC<{
   const { screenToFlowPosition } = useReactFlow();
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    console.log('[Waypoint] Mouse down on waypoint', index, 'at', x, y);
     e.stopPropagation();
     e.preventDefault();
     setIsDragging(true);
@@ -110,12 +109,10 @@ const WaypointHandle: React.FC<{
         y: moveEvent.clientY,
       });
 
-      console.log('[Waypoint] Dragging to', flowPosition.x, flowPosition.y);
       onDrag?.(edgeId, index, flowPosition.x, flowPosition.y);
     };
 
     const handleMouseUp = () => {
-      console.log('[Waypoint] Mouse up on waypoint', index);
       setIsDragging(false);
       onDragEnd?.(edgeId, index);
       document.removeEventListener('mousemove', handleMouseMove);
@@ -195,19 +192,10 @@ export const SCXMLTransitionEdge: React.FC<
   const onWaypointDragEnd = data?.onWaypointDragEnd;
   const onWaypointDelete = data?.onWaypointDelete;
 
-  // Debug logging
-  if (waypoints.length > 0) {
-    console.log(
-      `[Edge Render] Edge ${id} has ${waypoints.length} waypoints:`,
-      waypoints
-    );
-  }
-
   // Calculate edge path - prioritize waypoints over other rendering modes
   let edgePath: string;
   let labelX: number;
   let labelY: number;
-
   if (waypoints.length > 0) {
     // Use smooth Bezier curve through waypoints for better UX
     [edgePath, labelX, labelY] = buildSmoothBezierPath(
@@ -217,7 +205,7 @@ export const SCXMLTransitionEdge: React.FC<
       targetX,
       targetY
     );
-  } else if (offset !== 0) {
+  } else if (offset > 0) {
     // Use smoothstep path with offset for parallel edges
     [edgePath, labelX, labelY] = getOffsetSmoothStepPath({
       sourceX,
@@ -292,24 +280,12 @@ export const SCXMLTransitionEdge: React.FC<
       {/* Invisible wider stroke for easier clicking and waypoint addition */}
       <path
         d={edgePath}
-        fill="none"
-        stroke="transparent"
+        fill='none'
+        stroke='transparent'
         strokeWidth={20}
         style={{
           pointerEvents: 'stroke',
           cursor: 'pointer',
-        }}
-      />
-
-      {/* Render edge using BaseEdge for consistent marker styling */}
-      <BaseEdge
-        path={edgePath}
-        markerEnd={`url(#${MarkerType.ArrowClosed})`}
-        style={{
-          ...style,
-          stroke: edgeColor,
-          strokeWidth: strokeWidth,
-          strokeDasharray: getStrokeStyle() === 'dashed' ? '8,4' : 'none',
         }}
       />
 
@@ -330,7 +306,7 @@ export const SCXMLTransitionEdge: React.FC<
 
       <BaseEdge
         path={edgePath}
-        markerEnd={`url(#${id})`}
+        markerEnd={`url('#${id}')`}
         style={{
           ...style,
           stroke: edgeColor,
@@ -368,7 +344,11 @@ export const SCXMLTransitionEdge: React.FC<
               labelX - Math.max(labelContent.length * 8, 60) / 2 + labelOffset.x
             }
             y={labelY - 13 + labelOffset.y + labelOffsetY}
-            style={{ overflow: 'visible', zIndex: 10000, pointerEvents: 'none' }}
+            style={{
+              overflow: 'visible',
+              zIndex: 10000,
+              pointerEvents: 'none',
+            }}
           >
             <div
               className='px-2 py-1 rounded text-xs font-semibold text-center'
@@ -383,6 +363,10 @@ export const SCXMLTransitionEdge: React.FC<
                 opacity: 0.95,
                 cursor: 'pointer',
                 pointerEvents: 'auto', // Re-enable pointer events only on the label itself
+                userSelect: 'none', // Prevent text selection
+                WebkitUserSelect: 'none', // Safari/Chrome
+                MozUserSelect: 'none', // Firefox
+                msUserSelect: 'none', // IE/Edge
               }}
             >
               {labelContent}

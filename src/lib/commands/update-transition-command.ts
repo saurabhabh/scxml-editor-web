@@ -4,10 +4,11 @@ import { BaseCommand, type CommandResult } from './base-command';
  * UpdateTransitionCommand
  *
  * Updates a transition's event or condition attribute
- * Finds the transition by matching source, target, and existing event/cond
+ * Finds the transition by matching source, target, event/cond, and index
  */
 export class UpdateTransitionCommand extends BaseCommand {
   private oldValue?: string;
+  private transitionIndex?: number;
 
   constructor(
     private sourceId: string,
@@ -15,9 +16,11 @@ export class UpdateTransitionCommand extends BaseCommand {
     private originalEvent: string | undefined,
     private originalCond: string | undefined,
     private newValue: string,
-    private editingField: 'event' | 'cond'
+    private editingField: 'event' | 'cond',
+    transitionIndex?: number
   ) {
     super();
+    this.transitionIndex = transitionIndex;
   }
 
   execute(scxmlContent: string): CommandResult {
@@ -42,40 +45,23 @@ export class UpdateTransitionCommand extends BaseCommand {
     const transitions = sourceElement.querySelectorAll('transition');
     let transitionFound = false;
 
-    console.log('[UpdateTransitionCommand] Looking for transition:', {
-      source: this.sourceId,
-      target: this.targetId,
-      originalEvent: this.originalEvent,
-      originalCond: this.originalCond,
-      newValue: this.newValue,
-      editingField: this.editingField,
-      totalTransitions: transitions.length
-    });
+    // Convert to array for index-based access
+    const transitionsArray = Array.from(transitions);
 
-    for (const transition of Array.from(transitions)) {
+    // If we have a transition index, use it directly (most reliable)
+    if (
+      this.transitionIndex !== undefined &&
+      this.transitionIndex >= 0 &&
+      this.transitionIndex < transitionsArray.length
+    ) {
+      const transition = transitionsArray[this.transitionIndex];
       const transitionTarget = transition.getAttribute('target');
-      const transitionEvent = transition.getAttribute('event');
-      const transitionCond = transition.getAttribute('cond');
 
-      console.log('[UpdateTransitionCommand] Checking transition:', {
-        target: transitionTarget,
-        event: transitionEvent,
-        cond: transitionCond
-      });
+      // Verify it matches our target (safety check)
+      if (transitionTarget === this.targetId) {
+        const transitionCond = transition.getAttribute('cond');
+        const transitionEvent = transition.getAttribute('event');
 
-      // Match by target and either event or condition
-      const isMatch =
-        transitionTarget === this.targetId &&
-        ((this.originalEvent && transitionEvent === this.originalEvent) ||
-          (this.originalCond && transitionCond === this.originalCond) ||
-          (!this.originalEvent &&
-            !this.originalCond &&
-            !transitionEvent &&
-            !transitionCond));
-
-      console.log('[UpdateTransitionCommand] Match result:', isMatch);
-
-      if (isMatch) {
         // Store old value for undo
         if (this.editingField === 'cond') {
           this.oldValue = transitionCond || '';
@@ -87,8 +73,40 @@ export class UpdateTransitionCommand extends BaseCommand {
           transition.removeAttribute('cond');
         }
         transitionFound = true;
-        console.log('[UpdateTransitionCommand] Transition updated successfully');
-        break;
+      }
+    }
+
+    // Fallback to matching by attributes (for backward compatibility)
+    if (!transitionFound) {
+      for (const transition of transitionsArray) {
+        const transitionTarget = transition.getAttribute('target');
+        const transitionEvent = transition.getAttribute('event');
+        const transitionCond = transition.getAttribute('cond');
+
+        // Match by target and either event or condition
+        const isMatch =
+          transitionTarget === this.targetId &&
+          ((this.originalEvent && transitionEvent === this.originalEvent) ||
+            (this.originalCond && transitionCond === this.originalCond) ||
+            (!this.originalEvent &&
+              !this.originalCond &&
+              !transitionEvent &&
+              !transitionCond));
+
+        if (isMatch) {
+          // Store old value for undo
+          if (this.editingField === 'cond') {
+            this.oldValue = transitionCond || '';
+            transition.setAttribute('cond', this.newValue);
+            transition.removeAttribute('event');
+          } else {
+            this.oldValue = transitionEvent || '';
+            transition.setAttribute('event', this.newValue);
+            transition.removeAttribute('cond');
+          }
+          transitionFound = true;
+          break;
+        }
       }
     }
 
@@ -120,7 +138,8 @@ export class UpdateTransitionCommand extends BaseCommand {
       this.editingField === 'event' ? this.newValue : this.originalEvent,
       this.editingField === 'cond' ? this.newValue : this.originalCond,
       this.oldValue,
-      this.editingField
+      this.editingField,
+      this.transitionIndex
     );
 
     return inverseCommand.execute(scxmlContent);
