@@ -37,14 +37,19 @@ export class UpdateActionsCommand extends BaseCommand {
     }
 
     // Store old actions for undo
-    const existingOnentry = stateElement.querySelector('onentry');
+    // Use direct child selector to avoid finding nested onentry elements
+    const existingOnentry = Array.from(stateElement.children).find(
+      child => child.tagName.toLowerCase() === 'onentry'
+    ) as Element | undefined;
     if (existingOnentry) {
       this.oldEntryActions = this.extractActionsFromElement(existingOnentry);
     } else {
       this.oldEntryActions = [];
     }
 
-    const existingOnexit = stateElement.querySelector('onexit');
+    const existingOnexit = Array.from(stateElement.children).find(
+      child => child.tagName.toLowerCase() === 'onexit'
+    ) as Element | undefined;
     if (existingOnexit) {
       this.oldExitActions = this.extractActionsFromElement(existingOnexit);
     } else {

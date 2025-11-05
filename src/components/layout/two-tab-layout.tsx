@@ -11,7 +11,12 @@ interface TwoTabLayoutProps {
     name?: string;
     isDirty?: boolean;
   };
-  actions?: React.ReactNode | ((activeTab: TabType, setActiveTab: (tab: TabType) => void) => React.ReactNode);
+  actions?:
+    | React.ReactNode
+    | ((
+        activeTab: TabType,
+        setActiveTab: (tab: TabType) => void
+      ) => React.ReactNode);
 }
 
 export type TabType = 'code' | 'visual';
@@ -91,7 +96,11 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
           <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
             Delete
           </kbd>{' '}
-          to remove selected states or transitions
+          (Windows) or{' '}
+          <kbd className='px-1.5 py-0.5 bg-gray-200 rounded text-gray-700 font-mono'>
+            fn+Delete
+          </kbd>{' '}
+          (Mac) to remove selected states or transitions
         </>
       ),
     },
@@ -114,7 +123,9 @@ export const TwoTabLayout: React.FC<TwoTabLayoutProps> = ({
         </div>
         {actions && (
           <div className='flex items-center space-x-3'>
-            {typeof actions === 'function' ? actions(activeTab, setActiveTab) : actions}
+            {typeof actions === 'function'
+              ? actions(activeTab, setActiveTab)
+              : actions}
           </div>
         )}
       </div>

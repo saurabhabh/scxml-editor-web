@@ -2186,7 +2186,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                 value={selectedStateForActions.entryActions[0].location}
                 onChange={(e) => {
                   const updated = [...selectedStateForActions.entryActions];
-                  updated[0].location = e.target.value;
+                  updated[0] = { ...updated[0], location: e.target.value };
                   setSelectedStateForActions({
                     ...selectedStateForActions,
                     entryActions: updated,
@@ -2220,7 +2220,7 @@ const VisualDiagramInner: React.FC<VisualDiagramProps> = ({
                 value={selectedStateForActions.entryActions[0].expr}
                 onChange={(e) => {
                   const updated = [...selectedStateForActions.entryActions];
-                  updated[0].expr = e.target.value;
+                  updated[0] = { ...updated[0], expr: e.target.value };
                   setSelectedStateForActions({
                     ...selectedStateForActions,
                     entryActions: updated,
